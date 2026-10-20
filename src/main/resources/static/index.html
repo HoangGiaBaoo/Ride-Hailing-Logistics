@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RHL Demo</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<header class="app"><h1>Đặt xe &amp; Giao hàng — Demo</h1><span class="who"><a href="/swagger-ui.html" style="color:#fff">API (Swagger)</a></span></header>
+<div class="panel login">
+  <h2>Đăng nhập</h2>
+  <form id="form">
+    <label for="login">Email hoặc số điện thoại</label>
+    <input id="login" autocomplete="username" required>
+    <label for="password">Mật khẩu</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <div class="row"><button class="primary" type="submit">Đăng nhập</button></div>
+  </form>
+  <h3>Tài khoản mẫu (profile dev, mật khẩu trong application-dev.properties)</h3>
+  <div class="quick" id="quick"></div>
+  <p class="muted" id="hint"></p>
+</div>
+<script src="/js/api.js"></script>
+<script>
+  const pages = { CUSTOMER: '/customer.html', DRIVER: '/driver.html', SUPPORT_STAFF: '/ops.html', FINANCE_STAFF: '/ops.html',
+    REVIEWER: '/ops.html', ADMIN: '/ops.html' };
+  const accounts = [
+    ['Khách hàng', 'customer@rhl.dev'], ['Tài xế demo', 'driver.demo@rhl.dev'], ['Hỗ trợ', 'support@rhl.dev'],
+    ['Tài chính', 'finance@rhl.dev'], ['Kiểm duyệt', 'reviewer@rhl.dev'], ['Quản trị', 'admin@rhl.dev']];
+  const quick = document.getElementById('quick');
+  accounts.forEach(([label, email]) => quick.append(RHL.el('button', { type: 'button', onclick: () => {
+    document.getElementById('login').value = email; document.getElementById('password').focus();
+  } }, label)));
+  const need = new URLSearchParams(location.search).get('need');
+  if (need) document.getElementById('hint').textContent = 'Trang vừa mở cần vai trò ' + need + '.';
+
+  document.getElementById('form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    try {
+      const s = await RHL.login(document.getElementById('login').value, document.getElementById('password').value);
+      const role = s.user.roles.find((r) => pages[r]);
+      location.href = pages[role] || '/index.html';
+    } catch (e) {
+      RHL.toast(RHL.errorText(e), 'error');
+    }
+  });
+</script>
+</body>
+</html>

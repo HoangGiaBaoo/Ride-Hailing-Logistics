@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tài xế</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<header class="app"><h1>Tài xế</h1><span class="who"><span class="conn" id="conn" title="Realtime"></span><span id="me"></span><button id="logout">Đăng xuất</button></span></header>
+<main>
+  <section class="panel">
+    <h2>Trạng thái <span id="availability" class="badge"></span></h2>
+    <div class="row"><button id="online" class="primary" type="button">Bật Online</button><button id="offline" type="button">Offline</button></div>
+    <p class="muted" id="blocking"></p>
+    <label><input type="checkbox" id="autoMove" checked style="width:auto"> Tự di chuyển về điểm đón/đến (giả lập GPS)</label>
+    <p class="muted" id="gps">GPS: chưa gửi</p>
+    <div id="offerBox"></div>
+    <div id="tripBox"></div>
+    <h3>Ví</h3>
+    <div id="wallet" class="muted">—</div>
+  </section>
+  <div id="map"></div>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
+<script src="/js/api.js"></script>
+<script>
+(function () {
+  const s = RHL.requireRole('DRIVER');
+  if (!s) return;
+  const { el, show, fmt, call, toast, guarded } = RHL;
+  const $ = (id) => document.getElementById(id);
+  $('me').textContent = s.user.fullName;
+  $('logout').onclick = RHL.logout;
+
+  const map = L.map('map').setView([10.7775, 106.7015], 15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+  const me = L.marker([10.7775, 106.7015], { draggable: true, title: 'Vị trí của tôi' }).addTo(map).bindTooltip('Tôi (kéo để đổi vị trí)');
+  let client = null, availability = 'OFFLINE', sequence = Date.now(), offer = null, trip = null, countdownTimer = null, targetMarker = null;
+
+  async function refreshAvailability() {
+    const a = await call('GET', '/drivers/me/availability');
+    availability = a.availability;
+    $('availability').textContent = availability;
+    $('blocking').textContent = a.blockingReasons.length ? 'Chưa đủ điều kiện: ' + a.blockingReasons.join(' ') : '';
+  }
+
+  $('online').onclick = (ev) => guarded(ev.target, async () => { await call('POST', '/drivers/me/online'); await refreshAvailability(); });
+  $('offline').onclick = (ev) => guarded(ev.target, async () => { await call('POST', '/drivers/me/offline'); await refreshAvailability(); });
+
+  // Gui telemetry qua WebSocket moi 3 giay khi Online/dang chay (FR-LOC-001); sequence tang dan de server bo ban tin cu
+  setInterval(() => {
+    if (availability === 'OFFLINE' || !client || !client.connected) return;
+    if ($('autoMove').checked) stepTowardsTarget();
+    const p = me.getLatLng();
+    client.publish({ destination: '/app/driver/location', body: JSON.stringify({ latitude: p.lat, longitude: p.lng,
+      accuracyMeters: 6, headingDegrees: null, speedMetersPerSecond: null, deviceTimestamp: new Date().toISOString(),
+      sequence: ++sequence }) });
+    $('gps').textContent = 'GPS: ' + p.lat.toFixed(5) + ', ' + p.lng.toFixed(5) + ' lúc ' + fmt.time(new Date().toISOString());
+  }, 3000);
+
+  function stepTowardsTarget() {
+    if (!trip) return;
+    const goingToPickup = ['ACCEPTED', 'PICKING_UP'].includes(trip.status);
+    if (!goingToPickup && trip.status !== 'IN_TRIP') return;
+    const target = goingToPickup ? trip.pickup : trip.dropoff;
+    const p = me.getLatLng();
+    const dLat = target.latitude - p.lat, dLng = target.longitude - p.lng;
+    const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+    const step = 0.0009;   // ~100 m moi 3 giay (~120 km/h tren ban do de demo nhanh)
+    me.setLatLng(dist <= step ? [target.latitude, target.longitude] : [p.lat + dLat / dist * step, p.lng + dLng / dist * step]);
+  }
+
+  function renderOffer() {
+    clearInterval(countdownTimer);
+    if (!offer) { show($('offerBox')); return; }
+    const counter = el('span', { class: 'countdown' });
+    const tick = () => {
+      const left = Math.max(0, Math.round((new Date(offer.expiresAt) - Date.now()) / 1000));
+      counter.textContent = left + ' s';
+      if (left === 0) { offer = null; renderOffer(); }
+    };
+    tick();
+    countdownTimer = setInterval(tick, 500);
+    show($('offerBox'), el('div', { class: 'offer' },
+      el('h2', {}, 'Đề nghị chuyến mới ', counter),
+      el('dl', { class: 'kv' },
+        el('dt', {}, 'Dịch vụ'), el('dd', {}, offer.serviceType),
+        el('dt', {}, 'Điểm đón'), el('dd', {}, offer.pickupAddress || (offer.pickup && offer.pickup.displayAddress)),
+        el('dt', {}, 'Cách bạn'), el('dd', {}, fmt.km(offer.estimatedPickupDistanceMeters)),
+        el('dt', {}, 'Cước dự kiến'), el('dd', {}, fmt.money(offer.estimatedFare))),
+      el('div', { class: 'row' },
+        el('button', { class: 'primary', type: 'button', onclick: (ev) => guarded(ev.target, accept) }, 'Nhận chuyến'),
+        el('button', { type: 'button', onclick: (ev) => guarded(ev.target, decline) }, 'Từ chối'))));
+  }
+
+  async function accept() {
+    trip = await call('POST', '/offers/' + offer.offerId + '/accept', undefined, { idempotencyKey: RHL.newKey('accept-' + offer.offerId) });
+    offer = null; renderOffer(); renderTrip(); await refreshAvailability();
+  }
+
+  async function decline() {
+    await call('POST', '/offers/' + offer.offerId + '/decline');
+    offer = null; renderOffer(); await refreshAvailability();
+  }
+
+  const steps = {
+    ACCEPTED: ['Bắt đầu đi đón', 'pickup-started'],
+    PICKING_UP: ['Đã đến điểm đón', 'arrived'],
+    ARRIVED: ['Bắt đầu chuyến', 'started'],
+    IN_TRIP: ['Hoàn tất', 'completed']
+  };
+
+  function renderTrip() {
+    if (targetMarker) { targetMarker.remove(); targetMarker = null; }
+    if (!trip || ['COMPLETED', 'CANCELLED', 'NO_DRIVER'].includes(trip.status)) { show($('tripBox')); return; }
+    const toPickup = ['ACCEPTED', 'PICKING_UP', 'ARRIVED'].includes(trip.status);
+    const target = toPickup ? trip.pickup : trip.dropoff;
+    targetMarker = L.circleMarker([target.latitude, target.longitude], { radius: 10 }).addTo(map).bindTooltip(toPickup ? 'Điểm đón' : 'Điểm đến');
+    const input = el('input', { placeholder: trip.serviceType === 'DELIVERY' && trip.status === 'IN_TRIP' ? 'Mã giao hàng 6 số' : 'PIN 4 số của khách' });
+    const needsCode = (trip.status === 'ARRIVED' && trip.serviceType === 'RIDE') || (trip.status === 'IN_TRIP' && trip.serviceType === 'DELIVERY');
+    const [label, action] = steps[trip.status];
+    const parts = [el('h2', {}, 'Chuyến ' + trip.code), el('span', { class: 'badge warn' }, trip.statusDisplay),
+      el('dl', { class: 'kv' },
+        el('dt', {}, 'Đón'), el('dd', {}, trip.pickup.address),
+        el('dt', {}, 'Đến'), el('dd', {}, trip.dropoff.address),
+        el('dt', {}, 'Cước'), el('dd', {}, fmt.money(trip.fare.quotedTotal) + ' · ' + trip.paymentMethod))];
+    if (trip.delivery) parts.push(el('dl', { class: 'kv' },
+        el('dt', {}, 'Người nhận'), el('dd', {}, trip.delivery.recipientName || '—'),
+        el('dt', {}, 'SĐT'), el('dd', {}, trip.delivery.recipientPhone || '—'),
+        el('dt', {}, 'Kiện hàng'), el('dd', {}, trip.delivery.packageDescription)));
+    if (needsCode) parts.push(input);
+    parts.push(el('div', { class: 'row' },
+      el('button', { class: 'primary', type: 'button', onclick: (ev) => guarded(ev.target, async () => {
+        const p = me.getLatLng();
+        const body = { latitude: p.lat, longitude: p.lng };
+        if (needsCode && trip.status === 'ARRIVED') body.pin = input.value;
+        if (needsCode && trip.status === 'IN_TRIP') body.deliveryCode = input.value;
+        trip = await call('POST', '/trips/' + trip.id + '/' + action, body);
+        renderTrip(); refreshAvailability(); if (trip.status === 'COMPLETED') toast('Hoàn tất chuyến', 'ok');
+      }) }, label),
+      trip.status !== 'IN_TRIP' ? el('button', { class: 'danger', type: 'button', onclick: (ev) => guarded(ev.target, async () => {
+        if (!confirm('Hủy chuyến này?')) return;
+        trip = await call('POST', '/trips/' + trip.id + '/cancel', { reasonCode: trip.status === 'ARRIVED' ? 'CUSTOMER_NO_SHOW' : 'VEHICLE_ISSUE' },
+            { idempotencyKey: RHL.newKey('cancel') });
+        renderTrip(); refreshAvailability();
+      }) }, 'Hủy') : ''));
+    show($('tripBox'), ...parts);
+  }
+
+  async function loadWallet() {
+    try {
+      const w = await call('GET', '/drivers/me/wallet');
+      const entries = await call('GET', '/drivers/me/wallet/entries?size=5');
+      show($('wallet'), el('div', {}, 'Số dư: ', el('strong', {}, fmt.money(w.balance))),
+        el('table', {}, el('tr', {}, el('th', {}, 'Loại'), el('th', {}, 'Số tiền'), el('th', {}, 'Lúc')),
+          ...entries.items.map((e) => el('tr', {}, el('td', {}, e.type), el('td', {}, fmt.money(e.amount)), el('td', {}, fmt.time(e.createdAt))))));
+    } catch (e) { $('wallet').textContent = 'Chưa có ví (hồ sơ chưa duyệt).'; }
+  }
+
+  async function snapshot() {
+    await refreshAvailability();
+    offer = await call('GET', '/drivers/me/offers/current');
+    renderOffer();
+    const page = await call('GET', '/trips/mine?size=1');
+    trip = page.items[0] || null;
+    renderTrip();
+    loadWallet();
+  }
+
+  client = RHL.connectRealtime(async (c) => {
+    // Moi lan (ket noi lai) deu lay snapshot truoc khi nghe ban tin moi (FR-RT-005)
+    await snapshot();
+    c.subscribe('/user/queue/offers', RHL.sequenced((env) => {
+      if (env.type === 'DRIVER_OFFER_CREATED') { offer = env.data; renderOffer(); refreshAvailability(); toast('Có đề nghị chuyến mới', 'ok'); }
+      if (env.type === 'DRIVER_OFFER_CLOSED' && offer && offer.offerId === env.data.offerId) { offer = null; renderOffer(); refreshAvailability(); }
+    }));
+    c.subscribe('/user/queue/notifications', RHL.sequenced(async (env) => {
+      if (env.type === 'TELEMETRY_REJECTED') toast('GPS bị từ chối: ' + env.data.message, 'error');
+      if (env.type === 'DRIVER_EARNING_POSTED') { toast('Thu nhập: ' + fmt.money(env.data.netEarning), 'ok'); loadWallet(); }
+      if (env.type === 'TRIP_STATUS_CHANGED' && trip && env.data.tripId === trip.id) {
+        trip = await call('GET', '/trips/' + trip.id);
+        renderTrip(); refreshAvailability();
+        if (env.data.newStatus === 'CANCELLED') toast('Chuyến đã bị hủy', 'error');
+      }
+    }));
+  }, (on) => $('conn').classList.toggle('on', on));
+})();
+</script>
+</body>
+</html>

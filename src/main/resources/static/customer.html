@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Khách hàng</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<header class="app"><h1>Khách hàng</h1><span class="who"><span class="conn" id="conn" title="Realtime"></span><span id="me"></span><button id="logout">Đăng xuất</button></span></header>
+<main>
+  <section class="panel" id="side">
+    <div id="booking">
+      <h2>Đặt chuyến</h2>
+      <label for="service">Dịch vụ</label>
+      <select id="service"><option value="RIDE">Chở khách</option><option value="DELIVERY">Giao hàng</option></select>
+      <label for="vehicle">Loại xe</label>
+      <select id="vehicle"></select>
+      <div class="row"><button id="pickPickup" class="primary" type="button">Chọn điểm đón trên bản đồ</button><button id="pickDropoff" type="button">Chọn điểm đến</button></div>
+      <label for="pickupAddr">Điểm đón</label><input id="pickupAddr" placeholder="Bấm lên bản đồ">
+      <label for="dropoffAddr">Điểm đến</label><input id="dropoffAddr" placeholder="Bấm lên bản đồ">
+      <div id="deliveryFields" hidden>
+        <label for="rName">Tên người nhận</label><input id="rName">
+        <label for="rPhone">SĐT người nhận</label><input id="rPhone">
+        <label for="pkg">Mô tả kiện hàng</label><input id="pkg">
+        <label for="weight">Khối lượng (kg)</label><input id="weight" type="number" min="0.1" step="0.1" value="2">
+      </div>
+      <label for="payment">Thanh toán</label>
+      <select id="payment"><option value="CASH">Tiền mặt</option><option value="SANDBOX_CARD">Thẻ (sandbox)</option></select>
+      <div class="row"><button id="quoteBtn" type="button">Xem giá</button></div>
+      <div id="quote"></div>
+    </div>
+    <div id="tripBox"></div>
+  </section>
+  <div id="map"></div>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
+<script src="/js/api.js"></script>
+<script>
+(function () {
+  const s = RHL.requireRole('CUSTOMER');
+  if (!s) return;
+  const { el, show, fmt, call, toast, guarded } = RHL;
+  document.getElementById('me').textContent = s.user.fullName;
+  document.getElementById('logout').onclick = RHL.logout;
+
+  const map = L.map('map').setView([10.7769, 106.7009], 14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+  let picking = 'pickup', pickup = null, dropoff = null, quote = null, trip = null, client = null, subs = [];
+  const markers = {};
+  const vehicles = { RIDE: [['MOTORBIKE', 'Xe máy'], ['CAR_4', 'Ô tô 4 chỗ'], ['CAR_7', 'Ô tô 7 chỗ']],
+    DELIVERY: [['MOTORBIKE', 'Xe máy'], ['VAN', 'Xe tải van']] };
+  const $ = (id) => document.getElementById(id);
+
+  function fillVehicles() {
+    const service = $('service').value;
+    show($('vehicle'), ...vehicles[service].map(([v, n]) => el('option', { value: v }, n)));
+    $('deliveryFields').hidden = service !== 'DELIVERY';
+  }
+  $('service').onchange = fillVehicles;
+  fillVehicles();
+  $('pickPickup').onclick = () => { picking = 'pickup'; toast('Bấm lên bản đồ để chọn điểm đón'); };
+  $('pickDropoff').onclick = () => { picking = 'dropoff'; toast('Bấm lên bản đồ để chọn điểm đến'); };
+
+  function setMarker(name, latlng, label) {
+    if (markers[name]) markers[name].setLatLng(latlng); else markers[name] = L.marker(latlng, { title: label }).addTo(map).bindTooltip(label);
+  }
+
+  map.on('click', (e) => {
+    if (trip) return;
+    const text = e.latlng.lat.toFixed(5) + ', ' + e.latlng.lng.toFixed(5);
+    if (picking === 'pickup') { pickup = e.latlng; $('pickupAddr').value = 'Điểm đón ' + text; setMarker('pickup', e.latlng, 'Điểm đón'); picking = 'dropoff'; }
+    else { dropoff = e.latlng; $('dropoffAddr').value = 'Điểm đến ' + text; setMarker('dropoff', e.latlng, 'Điểm đến'); }
+  });
+
+  $('quoteBtn').onclick = (ev) => guarded(ev.target, async () => {
+    if (!pickup || !dropoff) { toast('Chọn điểm đón và điểm đến trên bản đồ trước', 'error'); return; }
+    quote = await call('POST', '/quotes', {
+      serviceType: $('service').value, vehicleType: $('vehicle').value,
+      pickup: { latitude: pickup.lat, longitude: pickup.lng, address: $('pickupAddr').value },
+      dropoff: { latitude: dropoff.lat, longitude: dropoff.lng, address: $('dropoffAddr').value } });
+    renderQuote();
+  });
+
+  function renderQuote() {
+    const b = quote.breakdown;
+    const bookBtn = el('button', { class: 'primary', type: 'button', onclick: (ev) => guarded(ev.target, book) }, 'Đặt chuyến');
+    show($('quote'),
+      el('h3', {}, 'Báo giá'),
+      el('dl', { class: 'kv' },
+        el('dt', {}, 'Quãng đường'), el('dd', {}, fmt.km(quote.distanceMeters) + (quote.approximateRoute ? ' (ước tính)' : '')),
+        el('dt', {}, 'Thời gian'), el('dd', {}, fmt.minutes(quote.durationSeconds)),
+        el('dt', {}, 'Giá mở cửa'), el('dd', {}, fmt.money(b.baseFare)),
+        el('dt', {}, 'Theo km'), el('dd', {}, fmt.money(b.distanceFare)),
+        el('dt', {}, 'Theo phút'), el('dd', {}, fmt.money(b.timeFare)),
+        el('dt', {}, 'Phí đặt chuyến'), el('dd', {}, fmt.money(b.bookingFee)),
+        el('dt', {}, 'Hệ số giá'), el('dd', {}, quote.surgeConfirmationRequired
+            ? el('span', { class: 'badge warn' }, 'x' + quote.surgeMultiplier + ' (+' + fmt.money(b.surgeAmount) + ')')
+            : 'x' + quote.surgeMultiplier),
+        el('dt', {}, 'Tổng'), el('dd', {}, el('strong', {}, fmt.money(quote.total))),
+        el('dt', {}, 'Hiệu lực đến'), el('dd', {}, fmt.time(quote.expiresAt))),
+      el('div', { class: 'row' }, bookBtn));
+  }
+
+  async function book() {
+    // Surge > 1 phai duoc khach xac nhan ro rang (BR-006, UI-CUS-009)
+    if (quote.surgeConfirmationRequired && !confirm('Giá đang tăng x' + quote.surgeMultiplier + '. Tổng ' + fmt.money(quote.total) + '. Đồng ý đặt?')) return;
+    const delivery = $('service').value === 'DELIVERY';
+    const body = { quoteId: quote.quoteId, paymentMethod: $('payment').value, surgeConfirmed: quote.surgeConfirmationRequired,
+      recipient: delivery ? { name: $('rName').value, phone: $('rPhone').value } : null,
+      packageDescription: delivery ? $('pkg').value : null, packageWeightKg: delivery ? Number($('weight').value) : null };
+    trip = await call('POST', '/trips', body, { idempotencyKey: RHL.newKey('trip') });
+    $('booking').hidden = true;
+    watch(trip.id);
+  }
+
+  function watch(tripId) {
+    renderTrip();
+    if (client) client.deactivate();
+    client = RHL.connectRealtime(async (c) => {
+      subs.forEach((x) => x.unsubscribe());
+      // Ket noi lai: lay snapshot truoc roi moi nghe tiep (FR-RT-005)
+      trip = await call('GET', '/trips/' + tripId);
+      renderTrip();
+      subs = [
+        c.subscribe('/topic/trips/' + tripId, RHL.sequenced(onTripMessage)),
+        c.subscribe('/user/queue/notifications', RHL.sequenced(onNotification))];
+    }, (on) => $('conn').classList.toggle('on', on));
+  }
+
+  async function onTripMessage(env) {
+    if (env.type === 'DRIVER_LOCATION_UPDATED') {
+      setMarker('driver', [env.data.latitude, env.data.longitude], 'Tài xế');
+      return;
+    }
+    if (env.type === 'TRIP_STATUS_CHANGED') {
+      if (env.data.tripVersion < trip.version) return;   // ban tin cu hon snapshot
+      trip = await call('GET', '/trips/' + trip.id);
+      renderTrip();
+      toast('Chuyến: ' + env.data.newStatusDisplay, 'ok');
+    }
+  }
+
+  function onNotification(env) {
+    if (env.type === 'PAYMENT_UPDATED') { toast('Thanh toán: ' + env.data.status, env.data.status === 'SUCCEEDED' ? 'ok' : 'error'); loadReceipt(); }
+    if (env.type === 'TRIP_STATUS_CHANGED' && trip && env.data.tripId === trip.id && env.data.newStatus === 'NO_DRIVER') onTripMessage(env);
+  }
+
+  function statusBadge(st) {
+    const cls = st === 'COMPLETED' ? 'ok' : ['CANCELLED', 'NO_DRIVER'].includes(st) ? 'err' : 'warn';
+    return el('span', { class: 'badge ' + cls }, trip.statusDisplay);
+  }
+
+  function renderTrip() {
+    if (!trip) return;
+    const ended = ['COMPLETED', 'CANCELLED', 'NO_DRIVER'].includes(trip.status);
+    const parts = [el('h2', {}, 'Chuyến ' + trip.code), el('div', {}, statusBadge(trip.status)),
+      el('dl', { class: 'kv' },
+        el('dt', {}, 'Đón'), el('dd', {}, trip.pickup.address),
+        el('dt', {}, 'Đến'), el('dd', {}, trip.dropoff.address),
+        el('dt', {}, 'Giá'), el('dd', {}, fmt.money(trip.fare.finalFare || trip.fare.quotedTotal)),
+        el('dt', {}, 'Thanh toán'), el('dd', {}, trip.paymentMethod))];
+    if (trip.status === 'MATCHING') parts.push(el('p', { class: 'muted' }, 'Đang tìm tài xế gần bạn…'));
+    if (trip.driver) parts.push(el('h3', {}, 'Tài xế'), el('dl', { class: 'kv' },
+        el('dt', {}, 'Tên'), el('dd', {}, trip.driver.name),
+        el('dt', {}, 'Xe'), el('dd', {}, trip.driver.vehicleDescription),
+        el('dt', {}, 'Biển số'), el('dd', {}, trip.driver.vehiclePlate),
+        el('dt', {}, 'SĐT'), el('dd', {}, trip.driver.maskedPhone)));
+    if (trip.startPin) parts.push(el('h3', {}, 'Mã PIN đọc cho tài xế khi lên xe'), el('div', { class: 'pin' }, trip.startPin));
+    if (trip.deliveryCode) parts.push(el('h3', {}, 'Mã giao hàng (gửi cho người nhận)'), el('div', { class: 'pin' }, trip.deliveryCode));
+    const actions = el('div', { class: 'row' });
+    if (!ended && trip.status !== 'IN_TRIP') actions.append(el('button', { class: 'danger', type: 'button', onclick: (ev) => guarded(ev.target, cancel) }, 'Hủy chuyến'));
+    if (ended) actions.append(el('button', { type: 'button', onclick: reset }, 'Đặt chuyến mới'));
+    parts.push(actions, el('div', { id: 'receipt' }));
+    show($('tripBox'), ...parts);
+    if (trip.status === 'COMPLETED' || trip.fare.cancellationFee) loadReceipt();
+    if (ended && markers.driver) { markers.driver.remove(); delete markers.driver; }
+  }
+
+  async function cancel() {
+    // Hien phi du kien truoc khi xac nhan (FR-CAN-004, UI-CUS-009)
+    const p = await call('GET', '/trips/' + trip.id + '/cancellation-preview');
+    if (!p.allowed) { toast(p.message, 'error'); return; }
+    if (!confirm(p.fee > 0 ? 'Hủy lúc này mất phí ' + fmt.money(p.fee) + '. Tiếp tục?' : 'Hủy chuyến miễn phí?')) return;
+    trip = await call('POST', '/trips/' + trip.id + '/cancel', { reasonCode: 'CHANGED_PLANS' }, { idempotencyKey: RHL.newKey('cancel') });
+    renderTrip();
+  }
+
+  async function loadReceipt() {
+    const box = document.getElementById('receipt');
+    if (!box || !trip) return;
+    const payments = await call('GET', '/trips/' + trip.id + '/payments');
+    show(box, el('h3', {}, 'Biên nhận'), ...(payments.length ? payments.map((p) => el('dl', { class: 'kv' },
+      el('dt', {}, p.kind === 'TRIP_FARE' ? 'Cước chuyến' : 'Phí hủy'), el('dd', {}, fmt.money(p.amount)),
+      el('dt', {}, 'Trạng thái'), el('dd', {}, p.status + (p.failureReason ? ' – ' + p.failureReason : '')),
+      el('dt', {}, 'Phương thức'), el('dd', {}, p.method),
+      p.status === 'FAILED' ? el('dd', {}, el('button', { type: 'button', onclick: (ev) => guarded(ev.target, async () => {
+        await call('POST', '/payments/' + p.id + '/retry', undefined, { idempotencyKey: RHL.newKey('retry') }); loadReceipt();
+      }) }, 'Thử lại thanh toán')) : '')) : [el('p', { class: 'muted' }, 'Đang chốt cước…')]));
+  }
+
+  function reset() {
+    trip = null; quote = null;
+    if (client) client.deactivate();
+    show($('tripBox')); show($('quote'));
+    $('booking').hidden = false;
+  }
+
+  // Mo lai trang giua chuyen: tiep tuc theo doi chuyen dang chay (NFR-REL-001)
+  call('GET', '/trips/mine?size=1').then((page) => {
+    const last = page.items[0];
+    if (last && !['COMPLETED', 'CANCELLED', 'NO_DRIVER'].includes(last.status)) {
+      trip = last; $('booking').hidden = true; watch(last.id);
+    }
+  }).catch(() => {});
+})();
+</script>
+</body>
+</html>
