@@ -4,7 +4,7 @@
 //
 //   node tools/simulate-drivers.mjs --drivers 100 --interval 3000 --duration 300 --rides
 //
-// Mat khau mac dinh doc tu src/main/resources/application-dev.properties (app.dev.seed-password).
+// Mat khau mac dinh doc tu config-server/src/main/resources/configs/identity-service-dev.properties (app.dev.seed-password).
 import { readFileSync } from 'node:fs';
 
 const args = Object.fromEntries(process.argv.slice(2).map((a, i, all) => a.startsWith('--')
@@ -19,7 +19,7 @@ const CENTER = { lat: 10.7769, lng: 106.7009 };
 
 function readSeedPassword() {
   try {
-    const props = readFileSync(new URL('../src/main/resources/application-dev.properties', import.meta.url), 'utf8');
+    const props = readFileSync(new URL('../config-server/src/main/resources/configs/identity-service-dev.properties', import.meta.url), 'utf8');
     return props.match(/^app\.dev\.seed-password=(.+)$/m)[1].trim();
   } catch {
     console.error('Khong doc duoc mat khau mau; truyen --password hoac RHL_DEMO_PASSWORD');
@@ -63,6 +63,12 @@ class Driver {
     this.token = await login(this.email);
     const on = await api('POST', '/drivers/me/online', this.token);
     if (!on.ok) throw new Error(this.email + ' online: ' + JSON.stringify(on.error));
+    if (RIDES) {
+      // Lan chay truoc dung giua chuyen -> tai xe van BUSY: chay tiep chuyen do thay vi doi offer mai mai
+      const mine = await api('GET', '/trips/mine?size=1', this.token);
+      const last = mine.ok && mine.data.items[0];
+      if (last && ['ACCEPTED', 'PICKING_UP', 'ARRIVED', 'IN_TRIP'].includes(last.status)) this.trip = last;
+    }
     this.timer = setInterval(() => this.tick().catch(() => stats.errors++), INTERVAL);
     await sleep(Math.random() * INTERVAL);   // rai deu ban tin, khong don vao mot thoi diem
   }

@@ -34,3 +34,25 @@ Một lỗi bắt được trước khi chạy: `@Modifying(clearAutomatically =
 | Mô phỏng 100 tài xế / 3 s, 90 s | 3.490 bản tin, 0 lỗi, p95 REST 30–37 ms |
 | Vị trí server → khách qua STOMP (20 mẫu) | p95 ≈ 18 ms, max 24 ms |
 | 100 luồng chấp nhận cùng offer | 1 gán, 1 `TripAccepted`, 1 dòng lịch sử ACCEPTED |
+
+## 2026-10-21 — Chuyển sang microservices
+
+**Vì sao.** Người dùng muốn cấu trúc thư mục kiểu microservices (eureka, config-server, gateway, mỗi service một module) như SRS CON-01/CON-02, không phải modular monolith. Không dùng docker-compose: giữ PostgreSQL Windows và container `rhl-redis`.
+
+**Làm gì.** Tách thành 9 module Maven, mỗi service một database `rhl_*`. Code miền giữ nguyên package, chỉ thay chỗ gọi xuyên miền:
+- Gọi đồng bộ → OpenFeign vào `/internal/**` với JWT vai trò `SERVICE`; gateway không có route `/internal`.
+- Event → outbox → Redis Stream `rhl:events` → inbox → handler idempotent (Redis đã có, không thêm broker).
+- Đăng ký tài xế → event `UserRegistered` thay cho gọi thẳng driver; duyệt tài xế → `DriverApproved` mở ví.
+- Giữ tài xế không còn chung transaction với chuyến → `availability_ref` + lệnh có điều kiện theo offer/chuyến, bù trừ khi rollback, `DriverHoldReconciler` đối soát.
+- Quote dùng một lần theo `used_by_trip` để trip-service gọi lại sau timeout không mất quote.
+- `DataSeeder` → `StaffSeeder` (chỉ nhân viên) + `tools/seed-dev.mjs` (mọi thứ còn lại qua API công khai).
+
+**Vấp và sửa.**
+- Spring Cloud cho Boot 4.1 mới có milestone → hạ Boot xuống 4.0.8.
+- `@FeignClient` mặc định là bean primary → đè bản giả trong test; đặt `primary = false`.
+- **Consumer Redis Stream kẹt vĩnh viễn sau khi khởi động lại**: group đã có → `XGROUP CREATE` trả `BUSYGROUP`, nhưng Spring bọc lỗi nên `getMessage()` chỉ là "Error in execution", không thấy chữ `BUSYGROUP` → coi là lỗi thật, lặp mãi. Test không bắt được vì IT luôn `flushDb`. Sửa: xét `getMostSpecificCause()`; thêm `EventStreamRestartIT` (đỏ trước khi sửa, xanh sau). Sau khi sửa, ~400 event tồn đọng được xử lý hết, 6 chuyến nhận thanh toán đúng.
+- 5 service × pool 20 = 100 kết nối = `max_connections` mặc định → psql "too many clients"; hạ pool về 10.
+- Gateway trả 503 khoảng 30 s đầu (chưa tải danh bạ Eureka) → `start-all.ps1` chờ tới khi route được mọi service.
+- `TRUNCATE` dọn dữ liệu trong IT của trip-service đôi khi deadlock với scheduler dispatch → thử lại tối đa 5 lần.
+- Script mô phỏng dừng giữa chuyến làm tài xế kẹt BUSY ở lần chạy sau → tài xế lấy chuyến dở qua `/trips/mine` rồi chạy tiếp.
+

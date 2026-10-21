@@ -15,7 +15,8 @@ const cacPhan = [];
 
 cacPhan.push(
   'BOI CANH: He thong dat xe & giao hang thoi gian thuc (SRS-RHL-002, docx o thu muc goc). ' +
-  'Spring Boot 4.1 / Java 21, modular monolith, PostgreSQL 18 (database ride_hailing) + Redis 7 (container rhl-redis), ' +
+  'Spring Boot 4.0.8 + Spring Cloud / Java 21, microservices Maven da module (eureka, config, gateway :8080, identity, driver, pricing, trip, payment), ' +
+  'PostgreSQL 18 (moi service mot DB rhl_*) + Redis 7 (container rhl-redis: GEO, Stream event, Pub/Sub), ' +
   'REST + STOMP WebSocket, trang demo HTML tinh. Yeu cau da lam ro o docs/00-yeu-cau.md.'
 );
 
@@ -27,7 +28,7 @@ cacPhan.push(
   '(4) tao chuyen, nhan offer, huy, thanh toan, ghi vi, consumer event deu idempotent; ' +
   '(5) driverId, so tien, gia, trang thai khong lay tu client; ' +
   '(6) kiem quyen o server ca vai tro lan quyen so huu; khong lo vi tri/PII ngoai pham vi chuyen; ' +
-  '(7) khong tiem repository cua mien khac, event tai chinh di qua Outbox; ' +
+  '(7) khong tiem repository cua mien khac, khong doc DB cua service khac (Feign /internal hoac event), event tai chinh di qua Outbox; ' +
   '(8) bi mat chi tu bien moi truong/config/application.properties (gitignored); ' +
   '(9) dinh danh tieng Anh, comment tieng Viet khong dau; ' +
   '(10) lam theo tung dot trong docs/04-chuc-nang.md, khong tu them chuc nang.'

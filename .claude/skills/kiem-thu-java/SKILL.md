@@ -67,7 +67,7 @@ class ConcurrentAcceptIT {
 }
 ```
 
-Profile `test` trỏ tới database `ride_hailing_test` (Flyway `clean` + `migrate` trước mỗi lớp) và Redis DB số 1.
+Mỗi service có profile `test` riêng trỏ tới database `rhl_<service>_test` và Redis DB số 1; test không cần config-server/Eureka (`src/test/resources/application.properties` import thẳng file cấu hình của config-server). Trong trip-service, driver-service và pricing-service được thay bằng bản giả trong bộ nhớ (`InMemoryDriverPool`, `InMemoryPricing`) — phía driver/pricing có IT riêng chạy trên DB thật.
 
 ## Không làm
 

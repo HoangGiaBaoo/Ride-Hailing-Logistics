@@ -33,7 +33,8 @@ Người hỏi sẽ mở code, chỉ vào một dòng và hỏi *"dòng này là
 
 | Câu hỏi | Ý chính |
 |---|---|
-| "Sao không làm microservices như SRS?" | Modular monolith: mỗi miền một package, không dùng chung repository, giao tiếp qua service công khai/event. Ranh giới đã đúng nên tách ra service là đổi cách gọi, không đổi nghiệp vụ. Một người làm thì vận hành 6 service + broker là rủi ro lớn hơn lợi ích |
+| "Tách service thì chống double assignment thế nào khi không còn một transaction?" | Tài xế nằm ở driver-service, chuyến ở trip-service. Giữ tài xế là lệnh có điều kiện theo **offer/chuyến đang giữ** (`availability_ref`) → gọi lại cho cùng kết quả, lệnh trễ không chạm chuyến mới. trip rollback → bù trừ (`release-offer`, `revert-busy`). Lệnh thả bị mất → `DriverHoldReconciler` 30 s đối soát. DB trip vẫn có partial unique index |
+| "Event đi giữa service bằng gì?" | Outbox trong DB của service phát → relay `XADD` Redis Stream → consumer group mỗi service → inbox → handler idempotent theo `eventId`. Service tắt vẫn không mất event: khởi động lại đọc tiếp từ group |
 | "Bản tin GPS đến sai thứ tự?" | So `sequence` trong Lua script trên Redis — so và ghi nguyên tử; bản cũ bị bỏ, không làm lùi vị trí |
 | "Khách khác có xem được vị trí tài xế của tôi không?" | `SUBSCRIBE /topic/trips/{id}` bị interceptor kiểm: chỉ khách/tài xế của chuyến, chuyến đang hoạt động. Vị trí chỉ phát khi ACCEPTED…IN_TRIP |
 | "Mất WebSocket giữa chuyến?" | Trạng thái nằm ở server. Client reconnect → gọi API snapshot → nghe tiếp, bỏ bản tin có sequence cũ |
@@ -58,6 +59,6 @@ Người hỏi sẽ mở code, chỉ vào một dòng và hỏi *"dòng này là
 
 - [ ] Docker + `rhl-redis` chạy, PostgreSQL chạy
 - [ ] `mvnw.cmd test` xanh, `mvnw.cmd verify -Pintegration` xanh
-- [ ] DataSeeder đã nạp, đăng nhập được mọi vai trò
+- [ ] `tools/start-all.ps1` lên đủ 8 tiến trình, `node tools/seed-dev.mjs` chạy xong, đăng nhập được mọi vai trò
 - [ ] Swagger mở được
 - [ ] Có tag git của bản chạy được

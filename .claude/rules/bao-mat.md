@@ -7,7 +7,7 @@ Theo SRS mục 6.3 (NFR-SEC) và 6.4 (NFR-PRV). Đây là chỗ dễ bị đánh
 | Mã | Nội dung |
 |---|---|
 | FR-IAM-010, NFR-SEC-004 | **Kiểm quyền ở server cho mọi endpoint và mọi bản tin WebSocket**: vai trò (`@PreAuthorize`) **và** quyền sở hữu tài nguyên (trong service). Không có quyền xem → 404, không phải 403 |
-| NFR-SEC-002 | Mật khẩu BCrypt. Không bao giờ lưu/log văn bản thuần, kể cả trong `DataSeeder` |
+| NFR-SEC-002 | Mật khẩu BCrypt. Không bao giờ lưu/log văn bản thuần, kể cả trong `StaffSeeder` và `tools/seed-dev.mjs` |
 | NFR-SEC-003 | Bí mật (`JWT_SECRET`, mật khẩu DB, khóa ký sandbox) chỉ đến từ biến môi trường / `config/application.properties` (gitignored). **Không ghi cứng trong `.java` hay `src/main/resources`** |
 | FR-IAM-006 | Đăng nhập sai: cùng một thông báo cho sai tài khoản / sai mật khẩu / bị khóa. 5 lần sai → khóa 15 phút |
 | NFR-SEC-005 | WebSocket: JWT kiểm ở frame `CONNECT`; `SUBSCRIBE` vào `/topic/trips/{id}` kiểm người tham gia chuyến |
@@ -22,6 +22,7 @@ Theo SRS mục 6.3 (NFR-SEC) và 6.4 (NFR-PRV). Đây là chỗ dễ bị đánh
 
 - [ ] Không có bí mật thật nào trong file được commit
 - [ ] Mọi truy vấn dùng tham số (`:param`) — không nối chuỗi SQL/JPQL
+- [ ] Controller `/internal/**` chỉ nhận token vai trò `SERVICE` (đã khóa trong `SecurityConfig`), không thêm route `/internal` ở gateway
 - [ ] Mọi controller dưới `/api/v1/**` có `@PreAuthorize` hoặc được mở có chủ đích trong `SecurityConfig` (chỉ `auth/**`, `payments/sandbox/callback`, tài liệu API, trang demo tĩnh)
 - [ ] Service kiểm `customerId`/`driverId` của tài nguyên khớp người gọi (hoặc người gọi là nhân viên có quyền)
 - [ ] Phản hồi cho tài xế không chứa SĐT/tên khách khi mới chỉ được offer

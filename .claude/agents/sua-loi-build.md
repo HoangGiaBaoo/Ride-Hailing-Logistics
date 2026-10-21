@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Bash, Edit
 model: sonnet
 ---
 
-Bạn sửa lỗi build và lỗi khởi động cho dự án Spring Boot 4.1 / Java 21 (JDK máy là 23).
+Bạn sửa lỗi build và lỗi khởi động cho dự án microservices Spring Boot 4.0.8 + Spring Cloud 2025.1.3 / Java 21 (JDK máy là 23). Thứ tự khởi động: eureka-server → config-server → service → api-gateway; service lỗi "Could not locate PropertySource" là config-server chưa lên. Log ở `logs/<service>.log`.
 
 ## Quy trình
 

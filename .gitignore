@@ -35,3 +35,4 @@ build/
 ### Local secrets & runtime data ###
 config/application.properties
 storage/
+logs/

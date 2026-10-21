@@ -5,7 +5,7 @@ Chia thành 7 đợt, làm theo thứ tự (đợt sau phụ thuộc đợt trư
 ## Đợt 1 — Nền tảng
 | Mã | Việc | Yêu cầu SRS | DoD |
 |---|---|---|---|
-| CN-01-01 ★ | Khung dự án, cấu hình PostgreSQL/Redis, Flyway | NFR-MNT-006 | `mvnw spring-boot:run` khởi động, Flyway tạo đủ bảng, `ddl-auto=validate` không lỗi |
+| CN-01-01 ★ | Khung dự án (đa module), Eureka, Config Server, Gateway, PostgreSQL/Redis, Flyway | NFR-MNT-006 | `tools/start-all.ps1` khởi động đủ 8 tiến trình, Flyway tạo đủ bảng ở từng DB, `ddl-auto=validate` không lỗi |
 | CN-01-02 ★ | Cấu trúc phản hồi/lỗi thống nhất, correlation ID | COM-003, COM-004 | Mọi lỗi trả `{code,message,correlationId}`; header `X-Correlation-Id` vào/ra |
 | CN-01-03 ★ | Outbox + relay + consumer idempotent + DLQ | FR-EVT-001…008, CON-07 | Event trùng không xử lý hai lần; handler lỗi 8 lần → `FAILED`; admin retry được |
 | CN-01-04 ★ | Audit bất biến | FR-ADM-004…006 | UPDATE/DELETE trên `audit_records` bị DB từ chối |

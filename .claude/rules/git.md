@@ -5,7 +5,7 @@
 1. **Commit sau mỗi thay đổi hoàn chỉnh, chạy được.** Không dồn nhiều đợt vào một commit.
 2. **Không commit khi chưa biên dịch được.** Chạy `mvnw.cmd compile`; đụng logic lõi (`trip`, `pricing`, `payment`, `wallet`, `location`) thì chạy `mvnw.cmd test`.
 3. Claude **chỉ commit khi được yêu cầu**.
-4. Không commit: `target/`, `.idea/`, `config/application.properties` (bí mật local), `storage/` (tài liệu tài xế), file `.docx` nháp nếu không được yêu cầu.
+4. Không commit: `target/`, `logs/`, `.idea/`, `config/application.properties` (bí mật local), `storage/` (tài liệu tài xế), file `.docx` nháp nếu không được yêu cầu.
 
 ## Định dạng — Conventional Commits
 
@@ -21,7 +21,7 @@ Subject tiếng Anh, thể mệnh lệnh, chữ thường sau dấu hai chấm, 
 
 ### Scope
 
-Trùng tên package miền: `identity` · `driver` · `location` · `pricing` · `trip` · `dispatch` · `payment` · `wallet` · `realtime` · `platform` · `common` · `demo` · `db`
+Trùng tên package miền: `identity` · `driver` · `location` · `pricing` · `trip` · `dispatch` · `payment` · `wallet` · `realtime` · `platform` · `common` · `gateway` · `config` · `eureka` · `demo` · `db`
 
 ### Ví dụ
 

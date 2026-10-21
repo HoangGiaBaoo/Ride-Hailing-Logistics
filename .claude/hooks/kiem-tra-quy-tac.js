@@ -46,7 +46,7 @@ process.stdin.on('end', () => {
 
   if (path.endsWith('.java')) {
     checkJava(path, content, violations, warnings);
-  } else if (/src\/main\/resources\/application[^/]*\.properties$/.test(path)) {
+  } else if (/src\/main\/resources\/(configs\/)?[\w-]*\.properties$/.test(path)) {
     checkAppConfig(content, violations);
   } else if (path.endsWith('.html')) {
     checkPage(content, warnings);

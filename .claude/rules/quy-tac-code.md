@@ -12,7 +12,7 @@ Những gì dưới đây **không phải quy tắc phong cách** — chúng là
 | **Đổi `status` của Trip bằng `setStatus` ngoài `TripStateMachine`/`Trip.transitionTo`** | Mọi chuyển trạng thái phải qua bảng chuyển hợp lệ + ghi `trip_status_history` (FR-TRIP-008…010) |
 | **Đọc rồi ghi trạng thái khả dụng tài xế/offer/thanh toán kiểu "if (x == A) set B"** | Race condition → double assignment. Dùng `UPDATE … WHERE status = :expected` (kiểm số dòng = 1), `SELECT … FOR UPDATE`, hoặc `@Version` (CON-06, DR-009) |
 | **Tin dữ liệu client tự khai**: driverId trong payload, số tiền thanh toán, giá, trạng thái | Lấy danh tính từ token, tiền từ cước đã chốt (FR-LOC-005, FR-PAY-002, NFR-SEC-012) |
-| **Tiêm Repository của miền khác** | Vi phạm ranh giới miền (CON-02). Gọi service công khai của miền đó hoặc nghe event |
+| **Tiêm Repository của miền khác, hay đọc DB của service khác** | Vi phạm ranh giới miền (CON-02). Cùng service: gọi service công khai của miền đó. Khác service: Feign vào `/internal/**` hoặc nghe event |
 
 ## Bốn lỗi kinh điển phải tự kiểm
 
@@ -25,7 +25,9 @@ Những gì dưới đây **không phải quy tắc phong cách** — chúng là
 
 - Thay đổi nghiệp vụ + event tài chính ghi **trong cùng transaction** qua `OutboxService.append(...)` (FR-EVT-002). Không gọi thẳng service miền khác để "báo" việc tài chính.
 - Đẩy realtime dùng `ApplicationEventPublisher` + `@TransactionalEventListener(phase = AFTER_COMMIT)` — không gửi WebSocket trước khi commit.
-- Consumer outbox phải idempotent (dựa `processed_events` hoặc business key).
+- Consumer outbox phải idempotent (dựa `processed_events` hoặc business key). Event đi outbox → Redis Stream `rhl:events` → `inbox_events` của service nhận; handler là bean `EventHandler`.
+- Gọi sang service khác (Feign) **không** nằm trong transaction của mình: lệnh có tác dụng phụ phải idempotent theo khóa nghiệp vụ, có bù trừ khi mình rollback (`AfterCommit.onRollback`), và có đối soát cho lệnh bị mất.
+- Endpoint `/internal/**` chỉ cho vai trò `SERVICE`, không có route ở gateway; endpoint cho người dùng luôn ở `/api/v1/**`.
 
 ## Được dùng thoải mái
 

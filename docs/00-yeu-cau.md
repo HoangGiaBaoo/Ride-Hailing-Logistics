@@ -16,8 +16,8 @@ Backend cho nền tảng **đặt xe chở khách (RIDE)** và **giao hàng theo
 
 | Vấn đề | SRS nói | Quyết định | Lý do |
 |---|---|---|---|
-| Phân rã dịch vụ (CON-01, CON-02) | Microservices, mỗi dịch vụ sở hữu dữ liệu | **Modular monolith**: 1 ứng dụng Spring Boot, mỗi miền một package, bảng thuộc đúng một miền, miền khác chỉ gọi qua service công khai hoặc domain event | Giữ đúng ranh giới miền nhưng chạy/demo/kiểm thử được trên một máy. Tách thành service thật về sau chỉ là đổi cách gọi |
-| Event broker (CON-07, FR-EVT) | Message broker | **Transactional Outbox** trong PostgreSQL + relay định kỳ, consumer idempotent theo `eventId` (bảng `processed_events`), quá số lần thử → `FAILED` (đóng vai DLQ) | Đáp ứng "ghi nguyên tử nghiệp vụ + event" (FR-EVT-002) mà không cần Kafka |
+| Phân rã dịch vụ (CON-01, CON-02) | Microservices, mỗi dịch vụ sở hữu dữ liệu | **Microservices** (đổi từ modular monolith theo yêu cầu người dùng, 2026-10-21): 5 service nghiệp vụ (identity, driver+location, pricing, trip+dispatch+realtime, payment+wallet), mỗi service một database; Eureka, Config Server, API Gateway; gọi đồng bộ bằng OpenFeign vào `/internal/**`, bất đồng bộ bằng event | Đúng CON-01/CON-02 của SRS. Giữ tài xế xuyên service bằng lệnh có điều kiện theo offer/chuyến + bù trừ + đối soát (`02-kien-truc.md` §2) |
+| Event broker (CON-07, FR-EVT) | Message broker | **Transactional Outbox** ở từng service → relay `XADD` vào **Redis Stream** `rhl:events` → consumer group mỗi service ghi **inbox**, handler idempotent theo `eventId` (`processed_events`), quá số lần thử → `FAILED` (DLQ) | Ghi nguyên tử nghiệp vụ + event (FR-EVT-002); Redis đã có sẵn nên không thêm Kafka/RabbitMQ |
 | CSDL | Quan hệ | **PostgreSQL 18**, migration bằng **Flyway** (NFR-MNT-006) | Có sẵn trên máy |
 | Chỉ mục không gian (CON-04) | Redis GEO/PostGIS/H3 | **Redis GEO** (`GEOADD`/`GEOSEARCH`) cho vị trí mới nhất; Redis còn dùng cho bộ đếm surge, rate limit, sequence realtime | Đúng gợi ý SRS, truy vấn nhanh |
 | Realtime (CON-03) | WebSocket/WSS | **STOMP over WebSocket** tại `/ws`, xác thực JWT ở frame CONNECT | Có sẵn trong Spring, hỗ trợ heartbeat, user destination |
