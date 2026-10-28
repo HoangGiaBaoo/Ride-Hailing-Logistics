@@ -1,4 +1,4 @@
--- Schema cua driver-service: database rieng, khong khoa ngoai sang service khac, chi luu ID.
+-- Schema cua driver-service: ho so, phuong tien, tai lieu, quyet dinh duyet. Database rieng, chi luu ID cua service khac.
 
 -- Chan UPDATE/DELETE tren bang bat bien: lich su trang thai, ledger, audit (DR-005, FR-ADM-006).
 CREATE FUNCTION prevent_mutation() RETURNS trigger AS $$
@@ -66,7 +66,7 @@ CREATE TABLE idempotency_records (
     CONSTRAINT uq_idempotency UNIQUE (user_id, scope, idem_key)
 );
 
--- Event nhan tu service khac qua Redis Stream: luu truoc, xu ly sau (inbox), de consumer
+-- Event nhan tu service khac qua Kafka: luu truoc, xu ly sau (inbox), de consumer
 -- thu lai duoc va idempotent ngay ca khi service chet giua chung (FR-EVT-004, FR-EVT-005).
 CREATE TABLE inbox_events (
     id               uuid PRIMARY KEY,           -- = eventId cua service phat
@@ -101,10 +101,10 @@ CREATE TABLE driver_profiles (
     review_status            varchar(20)  NOT NULL,
     review_reason            varchar(500),
     profile_version          int          NOT NULL DEFAULT 1,
-    availability             varchar(20)  NOT NULL,
-    availability_changed_at  timestamptz  NOT NULL,
-    -- offer (khi OFFERED) hoac chuyen (khi BUSY) dang giu tai xe: lenh tu trip-service phai khop moi duoc doi
-    availability_ref         uuid,
+    -- Ban chup tu identity (UserRegistered / UserProfileUpdated / UserStatusChanged), khong goi nguoc identity
+    full_name                varchar(100),
+    phone                    varchar(20),
+    account_active           boolean      NOT NULL DEFAULT true,
     submitted_at             timestamptz,
     approved_at              timestamptz,
     created_at               timestamptz  NOT NULL,
@@ -157,3 +157,4 @@ CREATE TABLE driver_review_decisions (
 CREATE INDEX idx_review_driver ON driver_review_decisions (driver_id, created_at);
 CREATE TRIGGER trg_review_immutable BEFORE UPDATE OR DELETE ON driver_review_decisions
     FOR EACH ROW EXECUTE FUNCTION prevent_mutation();
+

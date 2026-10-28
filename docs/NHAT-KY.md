@@ -56,3 +56,52 @@ Một lỗi bắt được trước khi chạy: `@Modifying(clearAutomatically =
 - `TRUNCATE` dọn dữ liệu trong IT của trip-service đôi khi deadlock với scheduler dispatch → thử lại tối đa 5 lần.
 - Script mô phỏng dừng giữa chuyến làm tài xế kẹt BUSY ở lần chạy sau → tài xế lấy chuyến dở qua `/trips/mine` rồi chạy tiếp.
 
+## 2026-10-21 (chiều) — Gộp còn 3 service nghiệp vụ
+
+**Vì sao.** Bản 5 service tách driver và trip ra hai database, nên việc quan trọng nhất của đề tài — gán một tài xế cho một chuyến, nguyên tử — thành giao dịch phân tán: `availability_ref`, lệnh `reserve/busy/revert-busy/release-offer/finish-trip` qua Feign, bù trừ `AfterCommit.onRollback`, `DriverHoldReconciler` 30 s, quote có `used_by_trip` + `release`. Nhiều code, nhiều chỗ kẹt tài xế, khó bảo vệ. Ranh giới service nên theo ranh giới nhất quán chứ không theo từng miền.
+
+**Làm gì.**
+- `driver-service` + `pricing-service` + `trip-service` → `ride-service` (:8082, DB `rhl_ride`). Payment chuyển sang :8083.
+- Chấp nhận offer, giữ/thả tài xế, dùng quote quay lại **một transaction** như bản đầu (lấy lại code từ commit `47297ae`).
+- Bỏ: `availability_ref`, `used_by_trip`, `DriverHoldReconciler`, `HoldState`, mọi `/internal` giữa driver/pricing/trip, `AfterCommit.onRollback`, kênh Redis `rt:driver-location` (vị trí giờ là Spring event trong tiến trình).
+- Còn đúng một lời gọi Feign: ride → identity (tên, SĐT, trạng thái tài khoản), chỉ đọc.
+- Event giữa các miền trong ride-service vẫn đi outbox → stream → inbox: giữ idempotent, tách lại sau không phải sửa handler.
+- Test: bỏ `DriverHoldIT`, `QuoteConsumptionIT`, `InMemoryDriverPool`, `InMemoryPricing` (kiểm cơ chế phân tán không còn tồn tại); IT của ride chạy tài xế/giá/chuyến thật, chỉ giả identity. `TripLifecycleIT` thêm kiểm cước cuối về tới chuyến qua Redis Stream.
+- Database dev dựng lại từ đầu (`rhl_driver/pricing/trip` bỏ, `rhl_identity/payment` làm mới), dữ liệu mẫu tạo lại bằng `seed-dev.mjs`.
+
+## 2026-10-25 — Chạy bằng IntelliJ, bổ sung giao diện theo SRS §3.1
+
+**Chạy trong IntelliJ.** Nút Run xám vì chưa có run configuration và IntelliJ còn nhớ module cũ. Thêm `.idea/runConfigurations/` (gitignored): 6 ứng dụng + 2 nhóm `1. Ha tang (eureka + config)` rồi `2. Cac service + gateway` — phải chạy đúng thứ tự vì service `fail-fast` khi chưa có config-server. Reload Maven trong IntelliJ 2025.3 lỗi `No implementation for ArtifactHandlerManager was bound` do wrapper dùng Maven 3.10.0 → hạ `.mvn/wrapper/maven-wrapper.properties` về 3.9.16.
+
+**Giao diện.** Người dùng hỏi phần quản lý hồ sơ/tài khoản ở đâu: API đã có từ đợt 2–3 nhưng trang demo chỉ làm luồng đặt xe, vì đã hiểu "rút gọn" thành "chỉ UC-03/UC-04" và không liệt kê phần cắt. SRS §3.1 ghi PHẢI có các màn đó → bổ sung đủ (bảng ở `TIEN-DO.md`), sửa CN-08-02 trong `04-chuc-nang.md` cho rõ. Bài học: cắt phạm vi phải ghi rõ cắt gì vào `TIEN-DO.md` để người dùng quyết định.
+
+**Vấp.** Form bảng giá ban đầu cho nhập vùng tự do, nhưng server chỉ nhận vùng trong `app.regions` → đổi thành ô chọn. Thiếu loại xe `VAN` trong ô chọn ở trang hồ sơ tài xế và bảng giá. Mọi tổ hợp dịch vụ/xe/vùng đã có quy tắc không hạn → muốn đổi giá phải tắt quy tắc cũ rồi tạo mới; ghi hướng dẫn ngay trên form.
+
+## 2026-10-27 — 6 service theo SRS, Kafka, chia package theo lớp, bám chương trình học
+
+**Yêu cầu.** Người dùng muốn backend "đầy đủ và chặt chẽ nhất", mỗi service có đủ thư mục controller/dto/exception…, dùng Kafka, và bám tài liệu học trên lớp (DTO + MapStruct, GlobalExceptionHandler, Eureka, OpenFeign + Resilience4j, Gateway GlobalFilter JWT, Config Server Git + Bus, Kafka outbox/DLT, Redis cache/PubSub/Redisson, refresh token + blacklist). Chốt: 6 service theo SRS, giữ Maven, config ở repo git riêng, không commit mốc trước khi làm.
+
+**Tách service.**
+- `ride-service` tách thành driver (:8082), location (:8083), pricing (:8084), trip (:8085); payment chuyển :8086. Mỗi service một DB.
+- Giữ chấp nhận offer nguyên tử: **trạng thái khả dụng tài xế** (`driver_states`) chuyển sang trip-service. driver-service chỉ giữ hồ sơ/kiểm duyệt; Online thì trip hỏi `online-eligibility` qua Feign ngoài transaction.
+- Tạo chuyến: `tripId = UUID(customerId + Idempotency-Key)`; tiêu quote qua Feign idempotent theo `tripId`, lỗi thì `release`.
+- Dispatch dùng khóa Redisson `dispatch:lock:{tripId}`.
+
+**Kafka thay Redis Stream.**
+- Outbox → topic `rhl.{producer}.events` (`acks=all`, producer idempotent, key = aggregateId) → consumer group `rhl.{service}`, ack thủ công sau khi ghi inbox, lỗi đọc → `.DLT`.
+- Vị trí đi topic riêng `rhl.location.updates` (không outbox).
+- Namespace topic/group (`app.kafka.namespace`) để integration test (`rhltest`) không đọc lẫn event dev trên cùng broker.
+
+**Cấu hình.**
+- config-server composite: native `config/` (bí mật, gitignored) + git `config-repo/` (repo riêng, có commit).
+- Spring Cloud Bus qua Kafka; `SandboxSettings` `@RefreshScope`.
+- Gateway: `AuthenticationFilter` kiểm JWT, blacklist `jti`, `token-version`, xóa `X-User-*` giả mạo.
+
+**Vấp khi chạy thật (test đều xanh nhưng vẫn lỗi):**
+- Tạo quy tắc giá 500 "Cannot find cache named 'pricing-rules'": Redisson kéo `cache-api` (JCache) vào classpath, Boot chọn JCache trước Redis. Sửa `spring.cache.type=redis`; thêm test khẳng định CacheManager là Redis ở pricing/location.
+- `busrefresh` 500: refresh dựng lại EurekaClient với hostname rỗng → NPE trong eureka-client 2.0.6. Sửa `eureka.client.refresh.enable=false`.
+- Bus ack lỗi `Can't convert value of class [B … StringSerializer`: binder của Bus kế thừa serializer chuỗi của `spring.kafka.producer.*`. Sửa: serializer `ByteArray` riêng cho binder.
+- Dữ liệu dev cũ: event `UserRegistered` bản cũ không có `fullName`/`phone` → hồ sơ tài xế không tên → chấp nhận offer 404. Sao lưu `rhl_identity`, `rhl_payment` bằng `pg_dump` rồi dựng lại 6 DB dev, seed lại.
+- `start-all.ps1` truyền `--spring.profiles.active=native` cho config-server (đè `composite`) → sửa sang `composite` + `CONFIG_GIT_URI`. `seed-dev.mjs`/`simulate-drivers.mjs` đọc mật khẩu mẫu ở đường cũ.
+
+**Số đo.** 90 unit + 21 integration xanh; 47/47 bước kịch bản trang demo; mô phỏng 30 tài xế 2 phút 1.830 bản tin 0 lỗi p95 35–46 ms; chuyến tiền mặt 22.000 → hoa hồng 4.400 đúng một lần.

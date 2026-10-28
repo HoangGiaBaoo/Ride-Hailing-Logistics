@@ -26,25 +26,4 @@ public final class AfterCommit {
         }
     }
 
-    /**
-     * Bu tru khi transaction cuc bo rollback sau khi da lam thay doi o service khac (saga don gian):
-     * vd da giu tai xe o driver-service nhung luu offer that bai. Loi bu tru chi log; job doi soat lo phan con lai.
-     */
-    public static void onRollback(Runnable compensation) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCompletion(int status) {
-                if (status == STATUS_ROLLED_BACK) {
-                    try {
-                        compensation.run();
-                    } catch (RuntimeException e) {
-                        org.slf4j.LoggerFactory.getLogger(AfterCommit.class).warn("Compensation failed: {}", e.toString());
-                    }
-                }
-            }
-        });
-    }
 }

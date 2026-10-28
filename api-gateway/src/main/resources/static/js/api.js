@@ -72,6 +72,29 @@
     return json.data;
   }
 
+  /** Gui multipart (tai tai lieu tai xe); khong dat Content-Type de trinh duyet tu them boundary. */
+  async function upload(path, formData) {
+    const doFetch = () => {
+      const s = session();
+      return fetch(API + path, { method: 'POST', headers: s ? { Authorization: 'Bearer ' + s.accessToken } : {}, body: formData });
+    };
+    let res = await doFetch();
+    if (res.status === 401 && session() && await refresh()) res = await doFetch();
+    const text = await res.text();
+    const json = text ? JSON.parse(text) : {};
+    if (!res.ok) throw new ApiError(res.status, json);
+    return json.data;
+  }
+
+  /** Goi API khong can dang nhap (dang ky, quen mat khau). */
+  async function publicCall(method, path, body) {
+    const res = await fetch(API + path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const text = await res.text();
+    const json = text ? JSON.parse(text) : {};
+    if (!res.ok) throw new ApiError(res.status, json);
+    return json.data;
+  }
+
   function newKey(prefix) {
     return prefix + '-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(16).slice(2));
   }
@@ -165,6 +188,12 @@
     return s;
   }
 
-  global.RHL = { call, login, logout, session, refresh, newKey, connectRealtime, sequenced, fmt, el, show, toast,
-    errorText, guarded, requireRole, ApiError };
+  /** Cap nhat ten hien thi trong phien sau khi sua ho so, de header cac trang khac khop ngay. */
+  function updateSessionUser(user) {
+    const s = session();
+    if (s) { s.user = user; saveSession(s); }
+  }
+
+  global.RHL = { call, upload, publicCall, login, logout, session, refresh, newKey, connectRealtime, sequenced, fmt, el, show,
+    toast, errorText, guarded, requireRole, updateSessionUser, ApiError };
 })(window);

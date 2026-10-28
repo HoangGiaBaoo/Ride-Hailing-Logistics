@@ -33,8 +33,8 @@ Người hỏi sẽ mở code, chỉ vào một dòng và hỏi *"dòng này là
 
 | Câu hỏi | Ý chính |
 |---|---|
-| "Tách service thì chống double assignment thế nào khi không còn một transaction?" | Tài xế nằm ở driver-service, chuyến ở trip-service. Giữ tài xế là lệnh có điều kiện theo **offer/chuyến đang giữ** (`availability_ref`) → gọi lại cho cùng kết quả, lệnh trễ không chạm chuyến mới. trip rollback → bù trừ (`release-offer`, `revert-busy`). Lệnh thả bị mất → `DriverHoldReconciler` 30 s đối soát. DB trip vẫn có partial unique index |
-| "Event đi giữa service bằng gì?" | Outbox trong DB của service phát → relay `XADD` Redis Stream → consumer group mỗi service → inbox → handler idempotent theo `eventId`. Service tắt vẫn không mất event: khởi động lại đọc tiếp từ group |
+| "Tài xế ở driver-service, chuyến ở trip-service — gán tài xế có nguyên tử không?" | Có. Hồ sơ/kiểm duyệt ở driver-service, nhưng **trạng thái khả dụng** (`driver_states`: AVAILABLE/OFFERED/BUSY) thuộc trip-service. Nên trip MATCHING + offer PENDING + tài xế OFFERED→BUSY vẫn đổi trong **một transaction một DB**. Bấm Online thì trip hỏi driver-service qua Feign (chỉ đọc) xem đã duyệt chưa. Payment chỉ cần nhất quán sau cùng (event `FareFinalized`) |
+| "Event đi giữa service bằng gì?" | Outbox trong DB của service phát → relay gửi Kafka (`acks=all`, idempotent producer, key = aggregateId nên cùng chuyến giữ thứ tự) → consumer group mỗi service, ack thủ công **sau khi** ghi inbox → handler idempotent theo `eventId`. Service tắt vẫn không mất event: offset chưa commit thì khởi động lại đọc tiếp; đọc lỗi mãi → topic `.DLT` |
 | "Bản tin GPS đến sai thứ tự?" | So `sequence` trong Lua script trên Redis — so và ghi nguyên tử; bản cũ bị bỏ, không làm lùi vị trí |
 | "Khách khác có xem được vị trí tài xế của tôi không?" | `SUBSCRIBE /topic/trips/{id}` bị interceptor kiểm: chỉ khách/tài xế của chuyến, chuyến đang hoạt động. Vị trí chỉ phát khi ACCEPTED…IN_TRIP |
 | "Mất WebSocket giữa chuyến?" | Trạng thái nằm ở server. Client reconnect → gọi API snapshot → nghe tiếp, bỏ bản tin có sequence cũ |
@@ -57,7 +57,7 @@ Người hỏi sẽ mở code, chỉ vào một dòng và hỏi *"dòng này là
 
 ## Checklist trước buổi bảo vệ
 
-- [ ] Docker + `rhl-redis` chạy, PostgreSQL chạy
+- [ ] Docker + `rhl-redis` + `rhl-kafka` chạy, PostgreSQL chạy, `config-repo/` đã commit
 - [ ] `mvnw.cmd test` xanh, `mvnw.cmd verify -Pintegration` xanh
 - [ ] `tools/start-all.ps1` lên đủ 8 tiến trình, `node tools/seed-dev.mjs` chạy xong, đăng nhập được mọi vai trò
 - [ ] Swagger mở được

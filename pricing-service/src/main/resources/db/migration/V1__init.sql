@@ -1,4 +1,4 @@
--- Schema cua pricing-service: database rieng, khong khoa ngoai sang service khac, chi luu ID.
+-- Schema cua pricing-service: bang gia va bao gia. Database rieng, chi luu ID cua service khac.
 
 -- Chan UPDATE/DELETE tren bang bat bien: lich su trang thai, ledger, audit (DR-005, FR-ADM-006).
 CREATE FUNCTION prevent_mutation() RETURNS trigger AS $$
@@ -66,7 +66,7 @@ CREATE TABLE idempotency_records (
     CONSTRAINT uq_idempotency UNIQUE (user_id, scope, idem_key)
 );
 
--- Event nhan tu service khac qua Redis Stream: luu truoc, xu ly sau (inbox), de consumer
+-- Event nhan tu service khac qua Kafka: luu truoc, xu ly sau (inbox), de consumer
 -- thu lai duoc va idempotent ngay ca khi service chet giua chung (FR-EVT-004, FR-EVT-005).
 CREATE TABLE inbox_events (
     id               uuid PRIMARY KEY,           -- = eventId cua service phat
@@ -87,6 +87,7 @@ CREATE TABLE inbox_events (
 );
 CREATE INDEX idx_inbox_pending ON inbox_events (next_attempt_at) WHERE status = 'NEW';
 CREATE INDEX idx_inbox_status ON inbox_events (status, occurred_at);
+
 
 -- =====================================================================
 -- pricing
@@ -142,8 +143,8 @@ CREATE TABLE fare_quotes (
     status            varchar(20)   NOT NULL,
     expires_at        timestamptz   NOT NULL,
     used_at           timestamptz,
-    -- Chuyen da dung quote (trip-service sinh id truoc): goi lai cung chuyen thi tra lai ket qua, rollback thi tra quote
-    used_by_trip      uuid,
+    consumed_by_trip_id uuid,
     created_at        timestamptz   NOT NULL
 );
 CREATE INDEX idx_quote_customer ON fare_quotes (customer_id, created_at DESC);
+

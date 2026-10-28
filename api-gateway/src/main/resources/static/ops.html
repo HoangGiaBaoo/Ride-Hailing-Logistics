@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
-<header class="app"><h1>Vận hành</h1><span class="who"><span id="me"></span><button id="logout">Đăng xuất</button></span></header>
+<header class="app"><h1>Vận hành</h1><span class="who"><span id="me"></span><a href="/account.html">Hồ sơ</a><button id="logout">Đăng xuất</button></span></header>
 <main class="single">
   <section class="panel">
     <div class="tabs" id="tabs"></div>
@@ -21,6 +21,7 @@
   const s = session();
   if (!s) { location.href = '/index.html'; return; }
   const roles = s.user.roles;
+  const has = (...r) => r.some((x) => roles.includes(x));
   document.getElementById('me').textContent = s.user.fullName + ' (' + roles.join(', ') + ')';
   document.getElementById('logout').onclick = RHL.logout;
   const view = document.getElementById('view');
@@ -30,73 +31,144 @@
     ['Chuyến', ['SUPPORT_STAFF', 'ADMIN'], trips],
     ['Duyệt tài xế', ['REVIEWER', 'ADMIN'], reviews],
     ['Thanh toán', ['FINANCE_STAFF', 'ADMIN'], payments],
+    ['Người dùng', ['ADMIN'], users],
+    ['Bảng giá & hoa hồng', ['ADMIN', 'FINANCE_STAFF'], pricing],
     ['Event lỗi', ['ADMIN'], outbox],
     ['Audit', ['ADMIN'], audit]
-  ].filter(([, allowed]) => allowed.some((r) => roles.includes(r)));
+  ].filter(([, allowed]) => has(...allowed));
   const tabBar = document.getElementById('tabs');
-  tabs.forEach(([name, , render], i) => tabBar.append(el('button', { type: 'button', onclick: (ev) => {
-    tabBar.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
-    ev.target.classList.add('active');
-    render().catch((e) => toast(RHL.errorText(e), 'error'));
-  } }, name)));
-  if (tabs.length) tabBar.firstChild.click(); else show(view, el('p', {}, 'Tài khoản này không có quyền vận hành.'));
+  const tabButtons = {};
+  tabs.forEach(([name, , render]) => {
+    tabButtons[name] = el('button', { type: 'button', onclick: () => openTab(name, render) }, name);
+    tabBar.append(tabButtons[name]);
+  });
+  function openTab(name, render, arg) {
+    Object.values(tabButtons).forEach((b) => b.classList.remove('active'));
+    tabButtons[name].classList.add('active');
+    render(arg).catch((e) => toast(RHL.errorText(e), 'error'));
+  }
+  const SERVICE_TYPES = [['RIDE', 'Chở khách'], ['DELIVERY', 'Giao hàng']];
+  const VEHICLE_TYPES = [['MOTORBIKE', 'Xe máy'], ['CAR_4', 'Ô tô 4 chỗ'], ['CAR_7', 'Ô tô 7 chỗ'], ['VAN', 'Xe tải van']];
+  const ROLES = ['CUSTOMER', 'DRIVER', 'REVIEWER', 'SUPPORT_STAFF', 'FINANCE_STAFF', 'ADMIN'];
 
   function table(headers, rows) {
     return el('table', {}, el('tr', {}, ...headers.map((h) => el('th', {}, h))), ...rows);
   }
+  function select(options, empty) {
+    return el('select', {}, ...(empty ? [el('option', { value: '' }, empty)] : []),
+      ...options.map((o) => Array.isArray(o) ? el('option', { value: o[0] }, o[1]) : el('option', { value: o }, o)));
+  }
+  function field(label, input) {
+    return el('div', {}, el('label', {}, label), input);
+  }
+  /** Thanh phan trang dung chung; load(page) ve lai bang. */
+  function pager(page, load) {
+    return el('div', { class: 'pager' },
+      el('button', { type: 'button', disabled: page.page <= 0, onclick: () => load(page.page - 1) }, '‹ Trước'),
+      el('span', { class: 'muted' }, 'Trang ' + (page.page + 1) + '/' + Math.max(1, page.totalPages) + ' · ' + page.totalElements + ' dòng'),
+      el('button', { type: 'button', disabled: page.page + 1 >= page.totalPages, onclick: () => load(page.page + 1) }, 'Sau ›'));
+  }
+  // input datetime-local la gio may nguoi xem -> doi sang ISO UTC cho API
+  const toIso = (v) => v ? new Date(v).toISOString() : '';
+  // Thao tac nhay cam phai xac nhan va co ly do (UI-ADM-005); server ghi audit
+  function askReason(question) {
+    const reason = prompt(question + '\n\nLý do (bắt buộc, sẽ ghi audit):');
+    return reason && reason.trim() ? reason.trim() : null;
+  }
 
-  async function trips() {
-    const code = el('input', { placeholder: 'Mã chuyến' });
-    const status = el('select', {}, el('option', { value: '' }, 'Mọi trạng thái'),
-      ...['MATCHING', 'ACCEPTED', 'PICKING_UP', 'ARRIVED', 'IN_TRIP', 'COMPLETED', 'CANCELLED', 'NO_DRIVER'].map((x) => el('option', { value: x }, x)));
+  // ---------------- chuyen (UI-ADM-003)
+
+  async function trips(preset = {}) {
+    const f = {
+      code: el('input', { placeholder: 'VD: RHL-…' }),
+      customerId: el('input', { placeholder: 'UUID khách' }),
+      driverId: el('input', { placeholder: 'UUID tài xế' }),
+      serviceType: select(SERVICE_TYPES, 'Mọi dịch vụ'),
+      status: select(['MATCHING', 'ACCEPTED', 'PICKING_UP', 'ARRIVED', 'IN_TRIP', 'COMPLETED', 'CANCELLED', 'NO_DRIVER'], 'Mọi trạng thái'),
+      from: el('input', { type: 'datetime-local' }),
+      to: el('input', { type: 'datetime-local' })
+    };
+    Object.entries(preset).forEach(([k, v]) => { f[k].value = v; });
     const result = el('div');
-    const search = async () => {
-      const q = new URLSearchParams({ size: '50' });
-      if (code.value) q.set('code', code.value);
-      if (status.value) q.set('status', status.value);
-      const page = await call('GET', '/support/trips?' + q);
-      show(result, el('p', { class: 'muted' }, page.totalElements + ' chuyến'), table(['Mã', 'Trạng thái', 'Dịch vụ', 'Đón', 'Tài xế', 'Giá', 'Tạo lúc', ''],
-        page.items.map((t) => el('tr', {}, el('td', {}, t.code), el('td', {}, t.statusDisplay), el('td', {}, t.serviceType),
+    const search = async (page = 0) => {
+      const q = new URLSearchParams({ size: '20', page: String(page) });
+      ['code', 'customerId', 'driverId', 'serviceType', 'status'].forEach((k) => { if (f[k].value.trim()) q.set(k, f[k].value.trim()); });
+      if (f.from.value) q.set('from', toIso(f.from.value));
+      if (f.to.value) q.set('to', toIso(f.to.value));
+      const res = await call('GET', '/support/trips?' + q);
+      show(result, table(['Mã', 'Trạng thái', 'Dịch vụ', 'Đón', 'Tài xế', 'Giá', 'Tạo lúc', ''],
+        res.items.map((t) => el('tr', {}, el('td', {}, t.code), el('td', {}, t.statusDisplay), el('td', {}, t.serviceType),
           el('td', {}, t.pickup.address), el('td', {}, t.driver ? t.driver.name + ' · ' + t.driver.vehiclePlate : '—'),
           el('td', {}, fmt.money(t.fare.finalFare || t.fare.quotedTotal)), el('td', {}, fmt.datetime(t.createdAt)),
           el('td', {}, ['COMPLETED', 'CANCELLED', 'NO_DRIVER'].includes(t.status) ? '' : el('button', { class: 'danger', type: 'button',
             onclick: (ev) => guarded(ev.target, async () => {
-              const note = prompt('Lý do hủy ngoại lệ (bắt buộc, sẽ ghi audit):');
+              const note = askReason('Hủy ngoại lệ chuyến ' + t.code + '?');
               if (!note) return;
               await call('POST', '/support/trips/' + t.id + '/cancel', { reasonCode: 'SUPPORT_EXCEPTION', note }, { idempotencyKey: RHL.newKey('support-cancel') });
-              toast('Đã hủy ' + t.code, 'ok'); search();
-            }) }, 'Hủy ngoại lệ'))))));
+              toast('Đã hủy ' + t.code, 'ok'); search(page);
+            }).catch(() => {}) }, 'Hủy ngoại lệ'))))), pager(res, search));
     };
-    show(view, el('div', { class: 'row' }, code, status, el('button', { class: 'primary', type: 'button', onclick: (ev) => guarded(ev.target, search) }, 'Tìm')), result);
-    await search();
+    const go = el('button', { class: 'primary', type: 'button', onclick: () => guarded(go, () => search(0)).catch(() => {}) }, 'Tìm');
+    show(view, el('div', { class: 'filters' }, field('Mã chuyến', f.code), field('Khách hàng', f.customerId), field('Tài xế', f.driverId),
+      field('Dịch vụ', f.serviceType), field('Trạng thái', f.status), field('Từ', f.from), field('Đến', f.to), go), result);
+    await search(0);
   }
+
+  // ---------------- duyet tai xe (UI-ADM-002)
 
   async function reviews() {
-    const page = await call('GET', '/review/drivers?status=PENDING_REVIEW&size=50');
+    const status = select([['PENDING_REVIEW', 'Chờ duyệt'], ['APPROVED', 'Đã duyệt'], ['REJECTED', 'Bị từ chối / cần bổ sung'],
+      ['SUSPENDED', 'Đình chỉ'], ['DRAFT', 'Nháp']]);
+    const list = el('div');
     const detail = el('div');
-    show(view, el('h2', {}, 'Hồ sơ chờ duyệt (' + page.totalElements + ')'),
-      table(['Tài xế', 'Gửi lúc', ''], page.items.map((d) => el('tr', {}, el('td', {}, d.fullName), el('td', {}, fmt.datetime(d.submittedAt)),
-        el('td', {}, el('button', { type: 'button', onclick: () => openDriver(d.driverId, detail) }, 'Xem'))))), detail);
+    const load = async (page = 0) => {
+      const res = await call('GET', '/review/drivers?status=' + status.value + '&size=20&page=' + page);
+      show(list, table(['Tài xế', 'Khả dụng', 'Gửi lúc', ''], res.items.map((d) => el('tr', {}, el('td', {}, d.fullName),
+        el('td', {}, d.availability), el('td', {}, fmt.datetime(d.submittedAt)),
+        el('td', {}, el('button', { type: 'button', onclick: () => openDriver(d.driverId, detail, () => load(page)).catch((e) => toast(RHL.errorText(e), 'error')) }, 'Xem'))))),
+        pager(res, load));
+      show(detail);
+    };
+    status.onchange = () => load(0).catch((e) => toast(RHL.errorText(e), 'error'));
+    show(view, el('div', { class: 'filters' }, field('Trạng thái hồ sơ', status)), list, detail);
+    await load(0);
   }
 
-  async function openDriver(driverId, box) {
+  async function openDriver(driverId, box, reload) {
     const d = await call('GET', '/review/drivers/' + driverId);
     const reason = el('input', { placeholder: 'Lý do (bắt buộc khi từ chối/yêu cầu bổ sung)' });
-    const decide = (decision) => (ev) => guarded(ev.target, async () => {
+    const decide = (decision, label) => (ev) => guarded(ev.target, async () => {
+      if (!confirm(label + ' hồ sơ của ' + d.fullName + ' (v' + d.profileVersion + ')?')) return;
       await call('POST', '/review/drivers/' + driverId + '/decisions', { decision, reason: reason.value || null });
-      toast('Đã ghi quyết định ' + decision, 'ok'); reviews();
-    });
-    show(box, el('h3', {}, d.fullName + ' — hồ sơ v' + d.profileVersion),
-      el('dl', { class: 'kv' }, el('dt', {}, 'GPLX'), el('dd', {}, d.licenseNumber + ' (' + d.licenseClass + ') hết hạn ' + d.licenseExpiry),
-        el('dt', {}, 'Xe'), el('dd', {}, d.vehicle ? d.vehicle.vehicleType + ' · ' + d.vehicle.plateNumber : '—')),
-      table(['Tài liệu', 'Số', 'Hết hạn', ''], d.documents.map((doc) => el('tr', {}, el('td', {}, doc.type), el('td', {}, doc.maskedNumber),
-        el('td', {}, doc.expiresAt), el('td', {}, el('button', { type: 'button', onclick: () => openDocument(doc.id) }, 'Mở tệp'))))),
+      toast('Đã ghi quyết định: ' + label, 'ok'); reload();
+    }).catch(() => {});
+    const actions = [];
+    if (d.reviewStatus === 'PENDING_REVIEW' && has('REVIEWER')) {
+      actions.push(reason, el('div', { class: 'row' }, el('button', { class: 'primary', type: 'button', onclick: decide('APPROVE', 'Duyệt') }, 'Duyệt'),
+        el('button', { type: 'button', onclick: decide('REQUEST_CHANGES', 'Yêu cầu bổ sung') }, 'Yêu cầu bổ sung'),
+        el('button', { class: 'danger', type: 'button', onclick: decide('REJECT', 'Từ chối') }, 'Từ chối')));
+    } else if (d.reviewStatus === 'PENDING_REVIEW') {
+      actions.push(el('p', { class: 'muted' }, 'Chỉ nhân viên kiểm duyệt mới ra quyết định duyệt.'));
+    }
+    if (d.reviewStatus === 'APPROVED' && has('ADMIN')) {
+      actions.push(el('div', { class: 'row' }, el('button', { class: 'danger', type: 'button', onclick: (ev) => guarded(ev.target, async () => {
+        const why = askReason('Đình chỉ tài xế ' + d.fullName + '? Tài xế sẽ bị chuyển Offline và không nhận chuyến được.');
+        if (!why) return;
+        await call('POST', '/admin/drivers/' + driverId + '/suspend', { reason: why });
+        toast('Đã đình chỉ ' + d.fullName, 'ok'); reload();
+      }).catch(() => {}) }, 'Đình chỉ tài xế')));
+    }
+    show(box, el('h3', {}, d.fullName + ' — hồ sơ v' + d.profileVersion + ' · ' + d.reviewStatus),
+      el('dl', { class: 'kv' }, el('dt', {}, 'GPLX'), el('dd', {}, (d.licenseNumber || '—') + ' (' + (d.licenseClass || '—') + ') hết hạn ' + (d.licenseExpiry || '—')),
+        el('dt', {}, 'Địa chỉ'), el('dd', {}, d.address || '—'),
+        el('dt', {}, 'Xe'), el('dd', {}, d.vehicle ? d.vehicle.vehicleType + ' · ' + d.vehicle.plateNumber + ' · ' + d.vehicle.brand + ' ' + d.vehicle.model + ' ' + d.vehicle.color + ' (' + d.vehicle.manufactureYear + ')' : '—'),
+        el('dt', {}, 'Khả dụng'), el('dd', {}, d.availability)),
+      table(['Tài liệu', 'Số', 'Hết hạn', 'Trạng thái', ''], d.documents.map((doc) => el('tr', {}, el('td', {}, doc.type), el('td', {}, doc.maskedNumber),
+        el('td', {}, doc.expiresAt), el('td', {}, doc.status), el('td', {}, el('button', { type: 'button', onclick: () => openDocument(doc.id) }, 'Mở tệp'))))),
       el('h3', {}, 'Lịch sử quyết định'),
       table(['Quyết định', 'Lý do', 'Phiên bản', 'Lúc'], d.decisions.map((x) => el('tr', {}, el('td', {}, x.decision), el('td', {}, x.reason || ''),
         el('td', {}, 'v' + x.profileVersion), el('td', {}, fmt.datetime(x.createdAt))))),
-      reason, el('div', { class: 'row' }, el('button', { class: 'primary', type: 'button', onclick: decide('APPROVE') }, 'Duyệt'),
-        el('button', { type: 'button', onclick: decide('REQUEST_CHANGES') }, 'Yêu cầu bổ sung'),
-        el('button', { class: 'danger', type: 'button', onclick: decide('REJECT') }, 'Từ chối')));
+      ...actions);
   }
 
   async function openDocument(id) {
@@ -106,30 +178,181 @@
     window.open(URL.createObjectURL(await res.blob()), '_blank', 'noopener');
   }
 
+  // ---------------- thanh toan
+
   async function payments() {
-    const status = el('select', {}, el('option', { value: '' }, 'Mọi trạng thái'),
-      ...['PENDING', 'SUCCEEDED', 'FAILED', 'PARTIALLY_REFUNDED', 'REFUNDED'].map((x) => el('option', { value: x }, x)));
+    const status = select(['PENDING', 'SUCCEEDED', 'FAILED', 'PARTIALLY_REFUNDED', 'REFUNDED'], 'Mọi trạng thái');
     const result = el('div');
-    const load = async () => {
-      const page = await call('GET', '/finance/payments?size=50' + (status.value ? '&status=' + status.value : ''));
-      show(result, table(['Mã chuyến', 'Loại', 'Số tiền', 'Đã hoàn', 'Phương thức', 'Trạng thái', 'Lúc', ''], page.items.map((p) => el('tr', {},
+    const load = async (page = 0) => {
+      const res = await call('GET', '/finance/payments?size=20&page=' + page + (status.value ? '&status=' + status.value : ''));
+      show(result, table(['Mã chuyến', 'Loại', 'Số tiền', 'Đã hoàn', 'Phương thức', 'Trạng thái', 'Lúc', ''], res.items.map((p) => el('tr', {},
         el('td', {}, p.tripId.slice(0, 8)), el('td', {}, p.kind), el('td', {}, fmt.money(p.amount)), el('td', {}, fmt.money(p.refundedAmount)),
         el('td', {}, p.method), el('td', {}, p.status), el('td', {}, fmt.datetime(p.createdAt)),
-        el('td', {}, ['SUCCEEDED', 'PARTIALLY_REFUNDED'].includes(p.status) && roles.includes('FINANCE_STAFF')
+        el('td', {}, ['SUCCEEDED', 'PARTIALLY_REFUNDED'].includes(p.status) && has('FINANCE_STAFF')
           ? el('button', { type: 'button', onclick: (ev) => guarded(ev.target, async () => {
             const amount = prompt('Số tiền hoàn (tối đa ' + (p.amount - p.refundedAmount) + '):');
-            const reason = amount && prompt('Lý do hoàn tiền:');
+            const reason = amount && askReason('Hoàn ' + amount + ' đ cho thanh toán này?');
             if (!amount || !reason) return;
             await call('POST', '/finance/payments/' + p.id + '/refunds', { amount: Number(amount), reason }, { idempotencyKey: RHL.newKey('refund') });
-            toast('Đã hoàn tiền', 'ok'); load();
-          }) }, 'Hoàn tiền') : '')))));
+            toast('Đã hoàn tiền', 'ok'); load(page);
+          }).catch(() => {}) }, 'Hoàn tiền') : '')))), pager(res, load));
     };
-    show(view, el('div', { class: 'row' }, status, el('button', { type: 'button', onclick: (ev) => guarded(ev.target, load) }, 'Lọc')), result);
-    await load();
+    status.onchange = () => load(0).catch((e) => toast(RHL.errorText(e), 'error'));
+    show(view, el('div', { class: 'filters' }, field('Trạng thái', status)), result);
+    await load(0);
   }
 
-  // Moi service co outbox/inbox va audit rieng (database rieng) -> hoi ca 5 service roi gop lai
-  const SERVICES = ['identity-service', 'driver-service', 'pricing-service', 'trip-service', 'payment-service'];
+  // ---------------- nguoi dung (FR-ADM-003, FR-IAM-009..011)
+
+  async function users() {
+    const q = el('input', { placeholder: 'Email, SĐT hoặc tên' });
+    const role = select(ROLES, 'Mọi vai trò');
+    const result = el('div');
+    const load = async (page = 0) => {
+      const p = new URLSearchParams({ size: '20', page: String(page) });
+      if (q.value.trim()) p.set('q', q.value.trim());
+      if (role.value) p.set('role', role.value);
+      const res = await call('GET', '/admin/users?' + p);
+      show(result, table(['Họ tên', 'Email', 'SĐT', 'Vai trò', 'Trạng thái', 'Tạo lúc', ''], res.items.map((u) => el('tr', {},
+        el('td', {}, u.fullName), el('td', {}, u.email), el('td', {}, u.phone), el('td', {}, u.roles.join(', ')),
+        el('td', {}, el('span', { class: 'badge ' + (u.status === 'ACTIVE' ? 'ok' : 'err') }, u.status === 'ACTIVE' ? 'Hoạt động' : 'Đã khóa')),
+        el('td', {}, fmt.datetime(u.createdAt)),
+        el('td', {}, el('div', { class: 'row' }, ...userActions(u, () => load(page))))))), pager(res, load));
+    };
+    const go = el('button', { class: 'primary', type: 'button', onclick: () => guarded(go, () => load(0)).catch(() => {}) }, 'Tìm');
+    q.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') go.click(); });
+    show(view, el('div', { class: 'filters' }, field('Tìm', q), field('Vai trò', role), go), result);
+    await load(0);
+  }
+
+  function userActions(u, reload) {
+    const self = u.id === s.user.id;
+    const acts = [];
+    acts.push(el('button', { type: 'button', onclick: () => editRoles(u, reload) }, 'Vai trò'));
+    if (!self) {
+      const lock = u.status === 'ACTIVE';
+      acts.push(el('button', { class: lock ? 'danger' : '', type: 'button', onclick: (ev) => guarded(ev.target, async () => {
+        const reason = askReason((lock ? 'Khóa' : 'Mở khóa') + ' tài khoản ' + u.email + '?' + (lock ? ' Người dùng sẽ bị đăng xuất khỏi mọi thiết bị.' : ''));
+        if (!reason) return;
+        await call('PUT', '/admin/users/' + u.id + '/status', { status: lock ? 'DISABLED' : 'ACTIVE', reason });
+        toast('Đã ' + (lock ? 'khóa ' : 'mở khóa ') + u.email, 'ok'); reload();
+      }).catch(() => {}) }, lock ? 'Khóa' : 'Mở khóa'));
+    }
+    // Lien ket sang tra cuu chuyen cua nguoi nay (UI-ADM-003)
+    if (u.roles.includes('CUSTOMER')) acts.push(el('button', { type: 'button', onclick: () => openTab('Chuyến', trips, { customerId: u.id }) }, 'Chuyến (khách)'));
+    if (u.roles.includes('DRIVER')) acts.push(el('button', { type: 'button', onclick: () => openTab('Chuyến', trips, { driverId: u.id }) }, 'Chuyến (tài xế)'));
+    return acts;
+  }
+
+  function editRoles(u, reload) {
+    const boxes = ROLES.map((r) => {
+      const cb = el('input', { type: 'checkbox', value: r, checked: u.roles.includes(r), style: 'width:auto' });
+      return [r, cb];
+    });
+    const dialog = el('div', { class: 'offer' }, el('h3', {}, 'Vai trò của ' + u.email),
+      ...boxes.map(([r, cb]) => el('label', {}, cb, ' ' + r)),
+      el('div', { class: 'row' },
+        el('button', { class: 'primary', type: 'button', onclick: (ev) => guarded(ev.target, async () => {
+          const chosen = boxes.filter(([, cb]) => cb.checked).map(([r]) => r);
+          if (!chosen.length) { toast('Chọn ít nhất một vai trò.', 'error'); return; }
+          const reason = askReason('Đổi vai trò của ' + u.email + ' thành ' + chosen.join(', ') + '?');
+          if (!reason) return;
+          await call('PUT', '/admin/users/' + u.id + '/roles', { roles: chosen, reason });
+          toast('Đã đổi vai trò', 'ok'); dialog.remove(); reload();
+        }).catch(() => {}) }, 'Lưu'),
+        el('button', { type: 'button', onclick: () => dialog.remove() }, 'Đóng')));
+    view.prepend(dialog);
+    dialog.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  // ---------------- bang gia & hoa hong (UI-ADM-004, FR-PRI, FR-WAL)
+
+  async function pricing() {
+    const [rules, commissions] = await Promise.all([call('GET', '/admin/pricing-rules'), call('GET', '/admin/commission-rules')]);
+    const canEdit = has('ADMIN');
+    const now = Date.now();
+    const effective = (from, to) => new Date(from).getTime() <= now && (!to || new Date(to).getTime() > now);
+    rules.sort((a, b) => (a.serviceType + a.vehicleType + a.regionCode).localeCompare(b.serviceType + b.vehicleType + b.regionCode) || b.version - a.version);
+
+    const ruleTable = table(['Dịch vụ', 'Xe', 'Vùng', 'Mở cửa', '/km', '/phút', 'Tối thiểu', 'Phí đặt', 'Hiệu lực', 'v', 'Trạng thái', ''],
+      rules.map((r) => el('tr', {}, el('td', {}, r.serviceType), el('td', {}, r.vehicleType), el('td', {}, r.regionCode),
+        el('td', {}, fmt.money(r.baseFare)), el('td', {}, fmt.money(r.perKm)), el('td', {}, fmt.money(r.perMinute)),
+        el('td', {}, fmt.money(r.minimumFare)), el('td', {}, fmt.money(r.bookingFee)),
+        el('td', {}, fmt.datetime(r.effectiveFrom) + ' → ' + (r.effectiveTo ? fmt.datetime(r.effectiveTo) : 'không hạn')), el('td', {}, r.version),
+        el('td', {}, !r.active ? el('span', { class: 'badge' }, 'Đã tắt') : effective(r.effectiveFrom, r.effectiveTo)
+          ? el('span', { class: 'badge ok' }, 'Đang áp dụng') : el('span', { class: 'badge warn' }, 'Chưa/hết hiệu lực')),
+        el('td', {}, canEdit && r.active ? el('button', { class: 'danger', type: 'button', onclick: (ev) => guarded(ev.target, async () => {
+          const reason = askReason('Tắt quy tắc giá ' + r.serviceType + '/' + r.vehicleType + '/' + r.regionCode + ' v' + r.version + '? Báo giá mới sẽ không dùng quy tắc này.');
+          if (!reason) return;
+          await call('POST', '/admin/pricing-rules/' + r.id + '/deactivate', { reason });
+          toast('Đã tắt quy tắc', 'ok'); pricing();
+        }).catch(() => {}) }, 'Tắt') : ''))));
+
+    const commissionTable = table(['Dịch vụ', 'Tỷ lệ', 'Hiệu lực từ', 'Đến', 'v'], commissions.map((c) => el('tr', {},
+      el('td', {}, c.serviceType), el('td', {}, (Number(c.rate) * 100).toLocaleString('vi-VN', { maximumFractionDigits: 2 }) + '%'),
+      el('td', {}, fmt.datetime(c.effectiveFrom)), el('td', {}, c.effectiveTo ? fmt.datetime(c.effectiveTo) : '—'), el('td', {}, c.version))));
+
+    const parts = [el('h2', {}, 'Quy tắc giá'), ruleTable];
+    if (canEdit) parts.push(pricingForm(rules));
+    parts.push(el('h2', {}, 'Hoa hồng nền tảng'), commissionTable);
+    if (canEdit) parts.push(commissionForm());
+    if (!canEdit) parts.push(el('p', { class: 'muted' }, 'Nhân viên tài chính chỉ xem; quản trị viên mới sửa được.'));
+    show(view, ...parts);
+  }
+
+  function pricingForm(rules) {
+    // Vung do server cau hinh (app.regions); lay tu cac quy tac dang co, mac dinh HCM
+    const regions = [...new Set(['HCM', ...rules.map((r) => r.regionCode)])];
+    const f = {
+      serviceType: select(SERVICE_TYPES), vehicleType: select(VEHICLE_TYPES), regionCode: select(regions),
+      baseFare: el('input', { type: 'number', min: '0', step: '1000', value: '12000' }), perKm: el('input', { type: 'number', min: '0', step: '500', value: '5000' }),
+      perMinute: el('input', { type: 'number', min: '0', step: '100', value: '500' }), minimumFare: el('input', { type: 'number', min: '0', step: '1000', value: '15000' }),
+      bookingFee: el('input', { type: 'number', min: '0', step: '1000', value: '2000' }),
+      effectiveFrom: el('input', { type: 'datetime-local' }), effectiveTo: el('input', { type: 'datetime-local' }),
+      reason: el('input', { placeholder: 'Bắt buộc, ghi audit', maxlength: '500' })
+    };
+    // Kiem tra phia client chi de bao som; server van kiem chong lan va hieu luc (UI-ADM-004)
+    const save = el('button', { class: 'primary', type: 'button', onclick: () => guarded(save, async () => {
+      if (!f.effectiveFrom.value || !f.reason.value.trim()) { toast('Nhập thời điểm hiệu lực và lý do.', 'error'); return; }
+      if (f.effectiveTo.value && new Date(f.effectiveTo.value) <= new Date(f.effectiveFrom.value)) { toast('Thời điểm kết thúc phải sau thời điểm bắt đầu.', 'error'); return; }
+      const money = ['baseFare', 'perKm', 'perMinute', 'minimumFare', 'bookingFee'];
+      if (money.some((k) => f[k].value === '' || Number(f[k].value) < 0 || !Number.isInteger(Number(f[k].value)))) { toast('Các mức giá phải là số nguyên đồng, không âm.', 'error'); return; }
+      if (!confirm('Tạo quy tắc giá mới cho ' + f.serviceType.value + '/' + f.vehicleType.value + '/' + f.regionCode.value + '?')) return;
+      const body = { serviceType: f.serviceType.value, vehicleType: f.vehicleType.value, regionCode: f.regionCode.value.trim(),
+        effectiveFrom: toIso(f.effectiveFrom.value), effectiveTo: f.effectiveTo.value ? toIso(f.effectiveTo.value) : null, reason: f.reason.value.trim() };
+      money.forEach((k) => { body[k] = Number(f[k].value); });
+      await call('POST', '/admin/pricing-rules', body);
+      toast('Đã tạo quy tắc giá', 'ok'); pricing();
+    }).catch(() => {}) }, 'Tạo quy tắc');
+    return el('div', {}, el('h3', {}, 'Thêm quy tắc giá'),
+      el('p', { class: 'muted' }, 'Hai quy tắc đang bật cùng dịch vụ/xe/vùng không được chồng thời gian hiệu lực. Muốn đổi giá: bấm "Tắt" quy tắc cũ rồi tạo quy tắc mới (hiệu lực từ bây giờ hoặc tương lai, không hồi tố). Xe máy chở được cả người và hàng; ô tô chỉ chở người; van chỉ giao hàng.'),
+      el('div', { class: 'filters' }, field('Dịch vụ', f.serviceType), field('Loại xe', f.vehicleType), field('Vùng', f.regionCode),
+        field('Mở cửa (đ)', f.baseFare), field('Mỗi km (đ)', f.perKm), field('Mỗi phút (đ)', f.perMinute), field('Tối thiểu (đ)', f.minimumFare),
+        field('Phí đặt (đ)', f.bookingFee), field('Hiệu lực từ', f.effectiveFrom), field('Đến (bỏ trống = không hạn)', f.effectiveTo),
+        field('Lý do', f.reason), save));
+  }
+
+  function commissionForm() {
+    const serviceType = select(SERVICE_TYPES);
+    const percent = el('input', { type: 'number', min: '0', max: '99.99', step: '0.5', value: '20' });
+    const from = el('input', { type: 'datetime-local' });
+    const save = el('button', { class: 'primary', type: 'button', onclick: () => guarded(save, async () => {
+      const p = Number(percent.value);
+      if (!from.value || !(p >= 0 && p < 100)) { toast('Nhập tỷ lệ 0–99,99% và thời điểm hiệu lực.', 'error'); return; }
+      if (!confirm('Áp dụng hoa hồng ' + p + '% cho ' + serviceType.value + ' từ ' + new Date(from.value).toLocaleString('vi-VN') + '?')) return;
+      // Lam tron ve 4 chu so thap phan nhu server yeu cau (20% -> 0.2), tranh sai so float khi chia 100
+      const rate = Number((Math.round(p * 100) / 10000).toFixed(4));
+      await call('POST', '/admin/commission-rules', { serviceType: serviceType.value, rate, effectiveFrom: toIso(from.value) });
+      toast('Đã tạo quy tắc hoa hồng', 'ok'); pricing();
+    }).catch(() => {}) }, 'Tạo quy tắc');
+    return el('div', {}, el('h3', {}, 'Thêm quy tắc hoa hồng (quy tắc mới thay quy tắc cũ từ thời điểm hiệu lực)'),
+      el('div', { class: 'filters' }, field('Dịch vụ', serviceType), field('Tỷ lệ (%)', percent), field('Hiệu lực từ', from), save));
+  }
+
+  // ---------------- nen tang: event loi, audit
+
+  // Moi service co outbox/inbox va audit rieng (database rieng) -> hoi ca 6 service roi gop lai
+  const SERVICES = ['identity-service', 'driver-service', 'location-service', 'pricing-service', 'trip-service', 'payment-service'];
   const fromAll = async (path) => (await Promise.all(SERVICES.map(async (svc) =>
     (await call('GET', '/admin/platform/' + svc + path)).items.map((x) => ({ ...x, service: svc }))))).flat();
 
@@ -142,7 +365,7 @@
         el('td', {}, e.aggregateType + ' ' + e.aggregateId.slice(0, 8)), el('td', {}, e.attempts), el('td', {}, e.lastError || ''),
         el('td', {}, el('button', { type: 'button', onclick: (ev) => guarded(ev.target, async () => {
           await call('POST', '/admin/platform/' + e.service + '/events/' + e.eventId + '/retry'); toast('Đã đưa lại vào hàng đợi', 'ok'); outbox();
-        }) }, 'Xử lý lại'))))));
+        }).catch(() => {}) }, 'Xử lý lại'))))));
   }
 
   async function audit() {
@@ -151,6 +374,9 @@
       items.map((a) => el('tr', {}, el('td', {}, fmt.datetime(a.createdAt)), el('td', {}, a.service), el('td', {}, a.action),
         el('td', {}, a.targetType + ' ' + a.targetId.slice(0, 8)), el('td', {}, a.actorRoles), el('td', {}, a.delta || '')))));
   }
+
+  // Mo tab dau o cuoi script: cac const phia tren (SERVICE_TYPES...) phai khoi tao xong truoc khi render chay
+  if (tabs.length) tabBar.firstChild.click(); else show(view, el('p', {}, 'Tài khoản này không có quyền vận hành.'));
 })();
 </script>
 </body>

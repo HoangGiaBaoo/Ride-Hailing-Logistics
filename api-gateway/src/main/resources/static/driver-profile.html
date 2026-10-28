@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hồ sơ tài xế</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<header class="app"><h1>Hồ sơ tài xế</h1><span class="who"><a href="/driver.html">← Màn hình nhận chuyến</a><a href="/account.html">Tài khoản</a><button id="logout">Đăng xuất</button></span></header>
+<main class="single">
+  <section class="panel narrow">
+    <h2>Trạng thái hồ sơ <span id="status" class="badge"></span></h2>
+    <div id="summary"></div>
+    <div class="row"><button id="submit" class="primary" type="button">Gửi duyệt</button></div>
+  </section>
+
+  <section class="panel narrow">
+    <h2>1. Thông tin cá nhân và giấy phép lái xe</h2>
+    <form id="profileForm">
+      <label for="licenseNumber">Số GPLX</label><input id="licenseNumber" required maxlength="30">
+      <label for="licenseClass">Hạng GPLX</label><input id="licenseClass" required maxlength="10" placeholder="A1, B2…">
+      <label for="licenseExpiry">GPLX hết hạn</label><input id="licenseExpiry" type="date" required>
+      <label for="nationalIdNumber">Số CCCD</label><input id="nationalIdNumber" required minlength="9" maxlength="20">
+      <label for="address">Địa chỉ</label><input id="address" required maxlength="255">
+      <div class="row"><button class="primary" type="submit">Lưu thông tin</button></div>
+    </form>
+  </section>
+
+  <section class="panel narrow">
+    <h2>2. Phương tiện</h2>
+    <form id="vehicleForm">
+      <label for="vehicleType">Loại xe</label>
+      <select id="vehicleType"><option value="MOTORBIKE">Xe máy</option><option value="CAR_4">Ô tô 4 chỗ</option><option value="CAR_7">Ô tô 7 chỗ</option><option value="VAN">Xe tải van (giao hàng)</option></select>
+      <label for="plateNumber">Biển số</label><input id="plateNumber" required maxlength="15" placeholder="59-X1 234.56">
+      <label for="brand">Hãng</label><input id="brand" required maxlength="50">
+      <label for="model">Dòng xe</label><input id="model" required maxlength="50">
+      <label for="color">Màu</label><input id="color" required maxlength="30">
+      <label for="manufactureYear">Năm sản xuất</label><input id="manufactureYear" type="number" required min="1990" max="2100">
+      <div class="row"><button class="primary" type="submit">Lưu phương tiện</button></div>
+    </form>
+  </section>
+
+  <section class="panel narrow">
+    <h2>3. Giấy tờ (JPG, PNG hoặc PDF, tối đa 5 MB)</h2>
+    <div id="documents"></div>
+  </section>
+
+  <section class="panel narrow">
+    <h2>Lịch sử xét duyệt</h2>
+    <div id="decisions" class="muted">Chưa có quyết định nào.</div>
+  </section>
+</main>
+<script src="/js/api.js"></script>
+<script>
+(function () {
+  const s = RHL.requireRole('DRIVER');
+  if (!s) return;
+  const { el, show, fmt, call, toast, guarded } = RHL;
+  const $ = (id) => document.getElementById(id);
+  $('logout').onclick = RHL.logout;
+  try { sessionStorage.removeItem('rhl.newDriver'); } catch (e) { /* khong quan trong */ }
+
+  const STATUS = { DRAFT: ['Nháp', ''], PENDING_REVIEW: ['Chờ duyệt', 'warn'], APPROVED: ['Đã duyệt', 'ok'],
+    REJECTED: ['Bị từ chối / cần bổ sung', 'err'], SUSPENDED: ['Bị đình chỉ', 'err'] };
+  const DOC_TYPES = [['DRIVER_LICENSE', 'Giấy phép lái xe'], ['NATIONAL_ID', 'Căn cước công dân'], ['VEHICLE_REGISTRATION', 'Đăng ký xe']];
+  const DECISION = { APPROVE: 'Duyệt', REJECT: 'Từ chối', REQUEST_CHANGES: 'Yêu cầu bổ sung', SUSPEND: 'Đình chỉ' };
+  let detail = null;
+
+  function setEditable(editable) {
+    document.querySelectorAll('#profileForm input, #profileForm button, #vehicleForm input, #vehicleForm select, #vehicleForm button, #documents input, #documents button')
+      .forEach((x) => { x.disabled = !editable; });
+    $('submit').disabled = !editable;
+  }
+
+  function render(d) {
+    detail = d;
+    const [label, kind] = STATUS[d.reviewStatus] || [d.reviewStatus, ''];
+    $('status').textContent = label;
+    $('status').className = 'badge ' + kind;
+    const editable = ['DRAFT', 'REJECTED'].includes(d.reviewStatus);
+    const parts = [el('p', { class: 'muted' }, 'Phiên bản hồ sơ v' + d.profileVersion)];
+    if (d.reviewReason) parts.push(el('p', {}, 'Lý do từ người duyệt: ', el('strong', {}, d.reviewReason)));
+    if (d.reviewStatus === 'PENDING_REVIEW') parts.push(el('p', {}, 'Hồ sơ đang chờ nhân viên kiểm duyệt; không sửa được cho tới khi có quyết định.'));
+    if (d.reviewStatus === 'APPROVED') parts.push(el('p', {}, 'Hồ sơ đã được duyệt. Bạn có thể bật Online ở ', el('a', { href: '/driver.html' }, 'màn hình nhận chuyến'), '.'));
+    if (editable && d.missingRequirements.length) {
+      parts.push(el('p', {}, 'Còn thiếu trước khi gửi duyệt:'), el('ul', {}, ...d.missingRequirements.map((m) => el('li', {}, m))));
+    } else if (editable) {
+      parts.push(el('p', { class: 'ok-text' }, 'Hồ sơ đã đủ, bấm "Gửi duyệt".'));
+    }
+    show($('summary'), ...parts);
+
+    $('licenseNumber').value = d.licenseNumber || '';
+    $('licenseClass').value = d.licenseClass || '';
+    $('licenseExpiry').value = d.licenseExpiry || '';
+    $('nationalIdNumber').value = d.nationalIdNumber || '';
+    $('address').value = d.address || '';
+    if (d.vehicle) {
+      ['vehicleType', 'plateNumber', 'brand', 'model', 'color', 'manufactureYear'].forEach((k) => { $(k).value = d.vehicle[k]; });
+    }
+
+    show($('documents'), ...DOC_TYPES.map(([type, name]) => documentRow(type, name, d.documents.find((x) => x.type === type))));
+
+    if (d.decisions.length) {
+      show($('decisions'), el('table', {}, el('tr', {}, el('th', {}, 'Quyết định'), el('th', {}, 'Lý do'), el('th', {}, 'Phiên bản'), el('th', {}, 'Lúc')),
+        ...d.decisions.map((x) => el('tr', {}, el('td', {}, DECISION[x.decision] || x.decision), el('td', {}, x.reason || ''),
+          el('td', {}, 'v' + x.profileVersion), el('td', {}, fmt.datetime(x.createdAt))))));
+    }
+    setEditable(editable);
+  }
+
+  function documentRow(type, name, current) {
+    const number = el('input', { placeholder: 'Số giấy tờ', maxlength: '50' });
+    const expires = el('input', { type: 'date', title: 'Ngày hết hạn' });
+    const file = el('input', { type: 'file', accept: '.jpg,.jpeg,.png,.pdf' });
+    const button = el('button', { type: 'button', onclick: () => guarded(button, async () => {
+      if (!number.value || !expires.value || !file.files[0]) { toast('Nhập số giấy tờ, ngày hết hạn và chọn tệp.', 'error'); return; }
+      if (file.files[0].size > 5 * 1024 * 1024) { toast('Tệp vượt quá 5 MB.', 'error'); return; }
+      const form = new FormData();
+      form.append('type', type);
+      form.append('number', number.value);
+      form.append('expiresAt', expires.value);
+      form.append('file', file.files[0]);
+      await RHL.upload('/drivers/me/documents', form);
+      toast('Đã tải lên ' + name, 'ok');
+      await load();
+    }).catch(() => {}) }, current ? 'Tải bản mới' : 'Tải lên');
+    return el('div', { class: 'doc' },
+      el('h3', {}, name),
+      el('p', { class: 'muted' }, current
+        ? 'Đã có: số ' + current.maskedNumber + ', hết hạn ' + current.expiresAt + ', trạng thái ' + current.status + ', tải lúc ' + fmt.datetime(current.uploadedAt)
+        : 'Chưa tải lên.'),
+      el('div', { class: 'grid3' }, number, expires, file), el('div', { class: 'row' }, button));
+  }
+
+  $('profileForm').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    guarded(ev.submitter, async () => {
+      render(await call('PUT', '/drivers/me/profile', { licenseNumber: $('licenseNumber').value, licenseClass: $('licenseClass').value,
+        licenseExpiry: $('licenseExpiry').value, nationalIdNumber: $('nationalIdNumber').value, address: $('address').value }));
+      toast('Đã lưu thông tin cá nhân', 'ok');
+    }).catch(() => {});
+  });
+
+  $('vehicleForm').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    guarded(ev.submitter, async () => {
+      render(await call('PUT', '/drivers/me/vehicle', { vehicleType: $('vehicleType').value, plateNumber: $('plateNumber').value,
+        brand: $('brand').value, model: $('model').value, color: $('color').value, manufactureYear: Number($('manufactureYear').value) }));
+      toast('Đã lưu phương tiện', 'ok');
+    }).catch(() => {});
+  });
+
+  $('submit').onclick = (ev) => guarded(ev.target, async () => {
+    if (!confirm('Gửi hồ sơ cho nhân viên kiểm duyệt? Trong lúc chờ duyệt bạn không sửa được hồ sơ.')) return;
+    render(await call('POST', '/drivers/me/submit'));
+    toast('Đã gửi duyệt', 'ok');
+  }).catch(() => {});
+
+  // Ho so nhap duoc tao qua event sau khi dang ky -> tai khoan vua tao co the chua co ngay, thu lai vai lan
+  async function load(attempt = 0) {
+    try {
+      render(await call('GET', '/drivers/me'));
+    } catch (e) {
+      if (e.status === 404 && attempt < 5) { setTimeout(() => load(attempt + 1), 1000); return; }
+      toast(RHL.errorText(e), 'error');
+    }
+  }
+  load();
+})();
+</script>
+</body>
+</html>

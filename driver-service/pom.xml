@@ -9,7 +9,7 @@
     </parent>
     <artifactId>driver-service</artifactId>
     <name>driver-service</name>
-    <description>Driver profiles, review, availability, telemetry and Redis GEO index</description>
+    <description>Driver profiles, vehicles, documents and review workflow (UC-01)</description>
 
     <dependencies>
         <dependency>

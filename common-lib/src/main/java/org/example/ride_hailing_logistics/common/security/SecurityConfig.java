@@ -16,6 +16,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
@@ -84,16 +85,19 @@ public class SecurityConfig {
     }
 
     @Bean
-    public JwtDecoder jwtDecoder(SecretKey jwtSecretKey, AppProperties props) {
+    public JwtDecoder jwtDecoder(SecretKey jwtSecretKey, AppProperties props, TokenRevocationStore revocations) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey).macAlgorithm(MacAlgorithm.HS256).build();
-        decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(props.security().jwt().issuer()));
+        // Gateway da kiem, service kiem lai: goi thang cong service (bo qua gateway) van khong dung duoc token da thu hoi
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefaultWithIssuer(props.security().jwt().issuer()),
+                new RevokedTokenValidator(revocations)));
         return decoder;
     }
 
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtGrantedAuthoritiesConverter authorities = new JwtGrantedAuthoritiesConverter();
-        authorities.setAuthoritiesClaimName("roles");
+        authorities.setAuthoritiesClaimName(JwtService.CLAIM_ROLES);
         authorities.setAuthorityPrefix("ROLE_");
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(authorities);

@@ -9,7 +9,7 @@
     </parent>
     <artifactId>trip-service</artifactId>
     <name>trip-service</name>
-    <description>Trip state machine, dispatch and offers, realtime STOMP WebSocket</description>
+    <description>Trip state machine, dispatch and offers, driver availability, realtime STOMP</description>
 
     <dependencies>
         <dependency>

@@ -30,7 +30,11 @@ public class JwtService {
         this.clock = clock;
     }
 
-    public IssuedToken issueAccessToken(UUID userId, Collection<Role> roles) {
+    public static final String CLAIM_ROLES = "roles";
+    /** Phien ban token cua nguoi dung: doi mat khau/khoa tai khoan tang so nay -> moi access token cu mat hieu luc. */
+    public static final String CLAIM_TOKEN_VERSION = "tv";
+
+    public IssuedToken issueAccessToken(UUID userId, Collection<Role> roles, long tokenVersion) {
         Instant now = clock.instant();
         Instant expiresAt = now.plus(props.accessTokenTtl());
         JwtClaimsSet claims = JwtClaimsSet.builder()
@@ -39,7 +43,8 @@ public class JwtService {
                 .issuedAt(now)
                 .expiresAt(expiresAt)
                 .id(UUID.randomUUID().toString())
-                .claim("roles", roles.stream().map(Enum::name).sorted().toList())
+                .claim(CLAIM_ROLES, roles.stream().map(Enum::name).sorted().toList())
+                .claim(CLAIM_TOKEN_VERSION, tokenVersion)
                 .build();
         String token = encoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims))
                 .getTokenValue();
@@ -58,7 +63,7 @@ public class JwtService {
                 .subject("service:" + serviceName)
                 .issuedAt(now)
                 .expiresAt(expiresAt)
-                .claim("roles", List.of(SERVICE_ROLE))
+                .claim(CLAIM_ROLES, List.of(SERVICE_ROLE))
                 .build();
         String token = encoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims))
                 .getTokenValue();

@@ -17,14 +17,12 @@ NFR-MNT-003: **state machine, matching, pricing, payment, wallet phải có unit
 | `NormalizersTest` | `0901234567`, `+84 901 234 567`, `84901234567` → cùng một dạng; email, biển số, che SĐT |
 | `SandboxSignatureTest` | Chữ ký đúng qua, sửa 1 byte thì trượt, timestamp quá hạn thì trượt |
 
-## Integration test (tag `integration`, cần PostgreSQL + Redis local)
+## Integration test (tag `integration`, cần PostgreSQL + Redis + Kafka local)
 
 | Test | Kiểm |
 |---|---|
-| `DriverHoldIT` (driver) | 50 luồng `reserve` cùng tài xế → đúng 1 thắng; lệnh lặp idempotent; lệnh trễ của offer cũ không thả tài xế đang BUSY; bù trừ `revert-busy` |
-| `QuoteConsumptionIT` (pricing) | Dùng quote lặp cùng chuyến → cùng kết quả; chuyến khác → `QUOTE_EXPIRED`; 20 chuyến tranh 1 quote → 1 thắng |
-| `PaymentLedgerIT` (payment) | Tiền mặt 87.000 qua Redis Stream thật → ví −17.400 đúng một lần |
-| `EventStreamRestartIT` (payment) | Consumer khởi động lại khi group đã có (`BUSYGROUP`) vẫn đọc tiếp |
+| `PaymentLedgerIT` (payment) | Tiền mặt 87.000 qua Kafka thật → ví −17.400 đúng một lần |
+| `DuplicateDeliveryIT` (payment) | Kafka giao lại cùng một event (at-least-once) → inbox bỏ trùng, ví không ghi hai lần |
 | `ConcurrentAcceptIT` (trip) | UC-06 kịch bản A: 100 luồng cùng chấp nhận một offer → mọi phản hồi cùng một kết quả (FR-MAT-012), DB có đúng 1 offer ACCEPTED, 1 dòng lịch sử ACCEPTED, 1 event `TripAccepted`; trip ACCEPTED, driver BUSY. Tài xế khác chấp nhận offer không phải của mình → 404 |
 | `DriverContentionIT` | UC-06 kịch bản B: 50 luồng `reserve` cùng tài xế → đúng 1 thắng; 8 chuyến tranh 1 tài xế → tối đa 1 offer PENDING, tài xế chỉ được gán vào 1 chuyến |
 | `IdempotentTripCreationIT` | 10 luồng cùng `Idempotency-Key` → 1 trip (luồng đến lúc đang xử lý nhận `CONFLICT`); khác payload → `IDEMPOTENCY_KEY_REUSED`; quote của người khác → 404 |

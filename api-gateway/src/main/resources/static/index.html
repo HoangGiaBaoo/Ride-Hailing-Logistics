@@ -7,43 +7,133 @@
   <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
-<header class="app"><h1>Đặt xe &amp; Giao hàng — Demo</h1><span class="who"><a href="/swagger-ui.html" style="color:#fff">API (Swagger)</a></span></header>
+<header class="app"><h1>Đặt xe &amp; Giao hàng — Demo</h1><span class="who"><a href="#links" style="color:#fff">Đường dẫn nhanh</a></span></header>
 <div class="panel login">
-  <h2>Đăng nhập</h2>
-  <form id="form">
-    <label for="login">Email hoặc số điện thoại</label>
-    <input id="login" autocomplete="username" required>
-    <label for="password">Mật khẩu</label>
-    <input id="password" type="password" autocomplete="current-password" required>
-    <div class="row"><button class="primary" type="submit">Đăng nhập</button></div>
+  <div class="tabs" id="tabs">
+    <button type="button" data-view="loginView" class="active">Đăng nhập</button>
+    <button type="button" data-view="registerView">Đăng ký</button>
+    <button type="button" data-view="resetView">Quên mật khẩu</button>
+  </div>
+
+  <div id="loginView">
+    <form id="form">
+      <label for="login">Email hoặc số điện thoại</label>
+      <input id="login" autocomplete="username" required>
+      <label for="password">Mật khẩu</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <div class="row"><button class="primary" type="submit">Đăng nhập</button></div>
+    </form>
+    <h3>Tài khoản mẫu (profile dev, mật khẩu ở dòng app.dev.seed-password trong config-repo/identity-service-dev.properties)</h3>
+    <div class="quick" id="quick"></div>
+    <p class="muted" id="hint"></p>
+  </div>
+
+  <form id="registerView" hidden>
+    <label for="rRole">Tôi là</label>
+    <select id="rRole"><option value="CUSTOMER">Khách hàng</option><option value="DRIVER">Tài xế</option></select>
+    <label for="rName">Họ tên</label><input id="rName" autocomplete="name" required maxlength="100">
+    <label for="rEmail">Email</label><input id="rEmail" type="email" autocomplete="email" required maxlength="254">
+    <label for="rPhone">Số điện thoại</label><input id="rPhone" autocomplete="tel" required maxlength="20" placeholder="0901234567">
+    <label for="rPass">Mật khẩu (8–72 ký tự, có chữ và số)</label>
+    <input id="rPass" type="password" autocomplete="new-password" required minlength="8" maxlength="72">
+    <div class="row"><button class="primary" type="submit">Tạo tài khoản</button></div>
   </form>
-  <h3>Tài khoản mẫu (profile dev, mật khẩu trong application-dev.properties)</h3>
-  <div class="quick" id="quick"></div>
-  <p class="muted" id="hint"></p>
+
+  <div id="resetView" hidden>
+    <form id="resetRequest">
+      <label for="resetLogin">Email hoặc số điện thoại</label><input id="resetLogin" required>
+      <div class="row"><button class="primary" type="submit">Gửi mã đặt lại</button></div>
+      <p class="muted">Môi trường demo chưa nối dịch vụ email/SMS: mã được ghi ở log của identity-service (dòng "[DEV ONLY…]").</p>
+    </form>
+    <form id="resetConfirm">
+      <label for="resetToken">Mã đặt lại</label><input id="resetToken" required autocomplete="one-time-code">
+      <label for="resetPass">Mật khẩu mới (8–72 ký tự, có chữ và số)</label>
+      <input id="resetPass" type="password" autocomplete="new-password" required minlength="8" maxlength="72">
+      <div class="row"><button class="primary" type="submit">Đặt lại mật khẩu</button></div>
+    </form>
+  </div>
+</div>
+<!-- Swagger o tung service (gateway WebFlux khong co springdoc). Khong dat link config-server: no tra ca bi mat trong config/ -->
+<div class="panel login" id="links">
+  <h2>Đường dẫn nhanh</h2>
+  <table>
+    <tr><th>Trang</th><th>Mở</th></tr>
+    <tr><td>Khách hàng / Tài xế / Vận hành</td>
+      <td><a href="/customer.html">customer</a> · <a href="/driver.html">driver</a> · <a href="/ops.html">ops</a></td></tr>
+    <tr><td>Eureka (service đã đăng ký)</td><td><a href="http://localhost:8761" target="_blank" rel="noopener">:8761</a></td></tr>
+    <tr><th colspan="2">Swagger UI từng service</th></tr>
+    <tr><td>identity — đăng ký, đăng nhập, người dùng</td><td><a href="http://localhost:8081/swagger-ui.html" target="_blank" rel="noopener">:8081</a></td></tr>
+    <tr><td>driver — hồ sơ, duyệt tài xế</td><td><a href="http://localhost:8082/swagger-ui.html" target="_blank" rel="noopener">:8082</a></td></tr>
+    <tr><td>location — GPS, tài xế gần</td><td><a href="http://localhost:8083/swagger-ui.html" target="_blank" rel="noopener">:8083</a></td></tr>
+    <tr><td>pricing — báo giá, bảng giá</td><td><a href="http://localhost:8084/swagger-ui.html" target="_blank" rel="noopener">:8084</a></td></tr>
+    <tr><td>trip — chuyến, offer, hủy</td><td><a href="http://localhost:8085/swagger-ui.html" target="_blank" rel="noopener">:8085</a></td></tr>
+    <tr><td>payment — thanh toán, ví</td><td><a href="http://localhost:8086/swagger-ui.html" target="_blank" rel="noopener">:8086</a></td></tr>
+  </table>
+  <p class="muted">Swagger gọi thẳng vào service, không qua gateway: lấy <code>accessToken</code> từ <code>POST /api/v1/auth/login</code> ở :8081 rồi bấm Authorize.</p>
 </div>
 <script src="/js/api.js"></script>
 <script>
+  const { el, toast, guarded, publicCall } = RHL;
+  const $ = (id) => document.getElementById(id);
   const pages = { CUSTOMER: '/customer.html', DRIVER: '/driver.html', SUPPORT_STAFF: '/ops.html', FINANCE_STAFF: '/ops.html',
     REVIEWER: '/ops.html', ADMIN: '/ops.html' };
   const accounts = [
     ['Khách hàng', 'customer@rhl.dev'], ['Tài xế demo', 'driver.demo@rhl.dev'], ['Hỗ trợ', 'support@rhl.dev'],
     ['Tài chính', 'finance@rhl.dev'], ['Kiểm duyệt', 'reviewer@rhl.dev'], ['Quản trị', 'admin@rhl.dev']];
-  const quick = document.getElementById('quick');
-  accounts.forEach(([label, email]) => quick.append(RHL.el('button', { type: 'button', onclick: () => {
-    document.getElementById('login').value = email; document.getElementById('password').focus();
+  accounts.forEach(([label, email]) => $('quick').append(el('button', { type: 'button', onclick: () => {
+    $('login').value = email; $('password').value = ''; $('password').focus();
   } }, label)));
   const need = new URLSearchParams(location.search).get('need');
-  if (need) document.getElementById('hint').textContent = 'Trang vừa mở cần vai trò ' + need + '.';
+  if (need) $('hint').textContent = 'Trang vừa mở cần vai trò ' + need + '.';
 
-  document.getElementById('form').addEventListener('submit', async (ev) => {
+  function openView(id) {
+    document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.view === id));
+    ['loginView', 'registerView', 'resetView'].forEach((v) => { $(v).hidden = v !== id; });
+  }
+  document.querySelectorAll('#tabs button').forEach((b) => { b.onclick = () => openView(b.dataset.view); });
+
+  async function signIn(loginId, password) {
+    const s = await RHL.login(loginId, password);
+    const role = s.user.roles.find((r) => pages[r]);
+    // Tai xe moi chua co ho so -> dua thang toi trang hoan thien ho so (UI-DRV-001)
+    location.href = role === 'DRIVER' && sessionStorage.getItem('rhl.newDriver') ? '/driver-profile.html' : (pages[role] || '/index.html');
+  }
+
+  $('form').addEventListener('submit', (ev) => {
     ev.preventDefault();
-    try {
-      const s = await RHL.login(document.getElementById('login').value, document.getElementById('password').value);
-      const role = s.user.roles.find((r) => pages[r]);
-      location.href = pages[role] || '/index.html';
-    } catch (e) {
-      RHL.toast(RHL.errorText(e), 'error');
-    }
+    guarded(ev.submitter, () => signIn($('login').value, $('password').value)).catch(() => {});
+  });
+
+  $('registerView').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    guarded(ev.submitter, async () => {
+      const role = $('rRole').value;
+      await publicCall('POST', '/auth/register', { email: $('rEmail').value, phone: $('rPhone').value,
+        password: $('rPass').value, fullName: $('rName').value, role });
+      toast('Đã tạo tài khoản', 'ok');
+      if (role === 'DRIVER') sessionStorage.setItem('rhl.newDriver', '1');
+      await signIn($('rEmail').value, $('rPass').value);
+    }).catch(() => {});
+  });
+
+  $('resetRequest').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    guarded(ev.submitter, async () => {
+      const r = await publicCall('POST', '/auth/password-reset/request', { login: $('resetLogin').value });
+      toast(r.message, 'ok');
+      $('resetToken').focus();
+    }).catch(() => {});
+  });
+
+  $('resetConfirm').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    guarded(ev.submitter, async () => {
+      const r = await publicCall('POST', '/auth/password-reset/confirm', { token: $('resetToken').value.trim(), newPassword: $('resetPass').value });
+      toast(r.message, 'ok');
+      $('resetPass').value = '';
+      $('login').value = $('resetLogin').value;
+      openView('loginView');
+    }).catch(() => {});
   });
 </script>
 </body>

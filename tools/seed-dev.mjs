@@ -16,7 +16,7 @@ const CONCURRENCY = 8;
 
 function readSeedPassword() {
   try {
-    const props = readFileSync(new URL('../config-server/src/main/resources/configs/identity-service-dev.properties', import.meta.url), 'utf8');
+    const props = readFileSync(new URL('../config-repo/identity-service-dev.properties', import.meta.url), 'utf8');
     return props.match(/^app\.dev\.seed-password=(.+)$/m)[1].trim();
   } catch {
     console.error('Khong doc duoc mat khau mau; truyen --password hoac RHL_DEMO_PASSWORD');

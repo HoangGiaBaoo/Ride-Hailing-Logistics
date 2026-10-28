@@ -72,7 +72,7 @@ Chia thành 7 đợt, làm theo thứ tự (đợt sau phụ thuộc đợt trư
 | Mã | Việc | SRS | DoD |
 |---|---|---|---|
 | CN-08-01 ★ | Dữ liệu mẫu (profile dev) | | Có sẵn tài khoản mỗi vai trò + 100 tài xế đã duyệt |
-| CN-08-02 ★ | Trang demo khách / tài xế / nhân viên | UI-CUS, UI-DRV, UI-ADM (rút gọn) | Đi hết luồng UC-03, UC-04 trên trình duyệt |
+| CN-08-02 ★ | Trang demo khách / tài xế / nhân viên | UI-CUS-001…009, UI-DRV-001…008, UI-ADM-001…005 (giao diện đơn giản nhưng **đủ mọi màn SRS ghi PHẢI**) | Đi hết luồng UC-01 (đăng ký → hồ sơ → duyệt), UC-03, UC-04 trên trình duyệt; có đăng ký, quên mật khẩu, hồ sơ của tôi, quản trị người dùng, bảng giá & hoa hồng |
 | CN-08-03 ★ | Script mô phỏng 100 tài xế / 3 s | UC-09, NFR-PERF-002 | Chạy 5 phút không lỗi, matching vẫn đúng |
 | CN-08-04 ★ | Unit test logic lõi + integration test đồng thời | NFR-MNT-003, UC-06 | Xem `.claude/rules/kiem-thu.md` |
 | CN-08-05 ○ | Đo độ trễ realtime p95 | NFR-PERF-001 | |

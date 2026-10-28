@@ -3,7 +3,7 @@ package org.example.ride_hailing_logistics;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-/** Bang gia, bao gia, surge, chot cuoc (FR-PRI). */
+/** Bao gia, bang gia, surge theo cung/cau, chot cuoc cuoi (FR-PRI-001..018, UC-02). */
 @SpringBootApplication
 public class PricingServiceApplication {
 

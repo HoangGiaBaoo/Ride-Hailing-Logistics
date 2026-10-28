@@ -67,7 +67,7 @@ class ConcurrentAcceptIT {
 }
 ```
 
-Mỗi service có profile `test` riêng trỏ tới database `rhl_<service>_test` và Redis DB số 1; test không cần config-server/Eureka (`src/test/resources/application.properties` import thẳng file cấu hình của config-server). Trong trip-service, driver-service và pricing-service được thay bằng bản giả trong bộ nhớ (`InMemoryDriverPool`, `InMemoryPricing`) — phía driver/pricing có IT riêng chạy trên DB thật.
+Mỗi service có profile `test` riêng trỏ tới database `rhl_<service>_test`, Redis DB số 1 và namespace Kafka `rhltest` (topic/group riêng, không đọc lẫn event dev); test không cần config-server/Eureka/Bus (`src/test/resources/application.properties` import thẳng `config/` và `config-repo/`). Trong trip-service, chuyến, offer, khả dụng tài xế là code thật trên DB thật; chỉ ba service bên ngoài (pricing, location, driver) được thay bằng bản giả trong bộ nhớ giữ đúng hợp đồng `/internal` (`TripIntegrationTest.FakePricing/FakeLocation/FakeDriverDirectory`, đăng ký `@Primary` — Feign client đặt `primary = false`). Event giữa service gửi qua Kafka thật (`KafkaTemplate` gửi envelope vào `topics.events(producer)`).
 
 ## Không làm
 

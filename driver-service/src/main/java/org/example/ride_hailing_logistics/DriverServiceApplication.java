@@ -3,7 +3,7 @@ package org.example.ride_hailing_logistics;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-/** Ho so, kiem duyet, trang thai kha dung cua tai xe; telemetry va chi muc Redis GEO (FR-DRV, FR-LOC). */
+/** Ho so tai xe, phuong tien, tai lieu va quy trinh duyet (FR-DRV-001..007, UC-01). */
 @SpringBootApplication
 public class DriverServiceApplication {
 

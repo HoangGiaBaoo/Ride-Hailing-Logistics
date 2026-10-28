@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
-<header class="app"><h1>Tài xế</h1><span class="who"><span class="conn" id="conn" title="Realtime"></span><span id="me"></span><button id="logout">Đăng xuất</button></span></header>
+<header class="app"><h1>Tài xế</h1><span class="who"><span class="conn" id="conn" title="Realtime"></span><span id="me"></span><a href="/driver-profile.html">Hồ sơ tài xế</a><a href="/account.html">Tài khoản</a><button id="logout">Đăng xuất</button></span></header>
 <main>
   <section class="panel">
     <h2>Trạng thái <span id="availability" class="badge"></span></h2>
@@ -44,7 +44,9 @@
     const a = await call('GET', '/drivers/me/availability');
     availability = a.availability;
     $('availability').textContent = availability;
-    $('blocking').textContent = a.blockingReasons.length ? 'Chưa đủ điều kiện: ' + a.blockingReasons.join(' ') : '';
+    // Giai thich vi sao chua Online duoc va chi cho noi sua (UI-DRV-002)
+    show($('blocking'), ...(a.blockingReasons.length
+      ? ['Chưa đủ điều kiện: ' + a.blockingReasons.join(' ') + ' ', el('a', { href: '/driver-profile.html' }, 'Hoàn thiện hồ sơ →')] : []));
   }
 
   $('online').onclick = (ev) => guarded(ev.target, async () => { await call('POST', '/drivers/me/online'); await refreshAvailability(); });

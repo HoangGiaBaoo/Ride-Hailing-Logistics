@@ -1,4 +1,6 @@
--- Schema cua trip-service: database rieng, khong khoa ngoai sang service khac, chi luu ID.
+-- Schema cua trip-service: chuyen, lich su trang thai, offer, kha dung tai xe. Database rieng,
+-- khong khoa ngoai sang service khac, chi luu ID.
+
 
 -- Chan UPDATE/DELETE tren bang bat bien: lich su trang thai, ledger, audit (DR-005, FR-ADM-006).
 CREATE FUNCTION prevent_mutation() RETURNS trigger AS $$
@@ -66,7 +68,7 @@ CREATE TABLE idempotency_records (
     CONSTRAINT uq_idempotency UNIQUE (user_id, scope, idem_key)
 );
 
--- Event nhan tu service khac qua Redis Stream: luu truoc, xu ly sau (inbox), de consumer
+-- Event nhan tu service khac qua Kafka: luu truoc, xu ly sau (inbox), de consumer
 -- thu lai duoc va idempotent ngay ca khi service chet giua chung (FR-EVT-004, FR-EVT-005).
 CREATE TABLE inbox_events (
     id               uuid PRIMARY KEY,           -- = eventId cua service phat
@@ -190,3 +192,23 @@ CREATE UNIQUE INDEX uq_offer_pending_driver ON driver_offers (driver_id) WHERE s
 CREATE UNIQUE INDEX uq_offer_pending_trip ON driver_offers (trip_id) WHERE status = 'PENDING';
 CREATE INDEX idx_offer_expiry ON driver_offers (expires_at) WHERE status = 'PENDING';
 CREATE INDEX idx_offer_trip ON driver_offers (trip_id);
+
+-- =====================================================================
+-- kha dung tai xe (SRS §7.2) — nam cung DB voi trips de chap nhan offer la MOT transaction
+-- =====================================================================
+CREATE TABLE driver_states (
+    driver_id                uuid         PRIMARY KEY,
+    availability             varchar(20)  NOT NULL,
+    suspended                boolean      NOT NULL DEFAULT false,
+    account_disabled         boolean      NOT NULL DEFAULT false,
+    full_name                varchar(150),
+    phone                    varchar(20),
+    vehicle_id               uuid,
+    vehicle_type             varchar(20),
+    plate_number             varchar(20),
+    vehicle_description      varchar(200),
+    availability_changed_at  timestamptz  NOT NULL,
+    version                  bigint       NOT NULL DEFAULT 0,
+    CONSTRAINT ck_driver_state_availability CHECK (availability IN ('OFFLINE', 'AVAILABLE', 'OFFERED', 'BUSY'))
+);
+CREATE INDEX idx_driver_state_available ON driver_states (vehicle_type) WHERE availability = 'AVAILABLE';

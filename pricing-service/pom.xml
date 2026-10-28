@@ -9,7 +9,7 @@
     </parent>
     <artifactId>pricing-service</artifactId>
     <name>pricing-service</name>
-    <description>Pricing rules, quotes, surge</description>
+    <description>Fare quotes, pricing rules, surge from supply and demand, final fare</description>
 
     <dependencies>
         <dependency>

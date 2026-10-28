@@ -25,8 +25,8 @@ Những gì dưới đây **không phải quy tắc phong cách** — chúng là
 
 - Thay đổi nghiệp vụ + event tài chính ghi **trong cùng transaction** qua `OutboxService.append(...)` (FR-EVT-002). Không gọi thẳng service miền khác để "báo" việc tài chính.
 - Đẩy realtime dùng `ApplicationEventPublisher` + `@TransactionalEventListener(phase = AFTER_COMMIT)` — không gửi WebSocket trước khi commit.
-- Consumer outbox phải idempotent (dựa `processed_events` hoặc business key). Event đi outbox → Redis Stream `rhl:events` → `inbox_events` của service nhận; handler là bean `EventHandler`.
-- Gọi sang service khác (Feign) **không** nằm trong transaction của mình: lệnh có tác dụng phụ phải idempotent theo khóa nghiệp vụ, có bù trừ khi mình rollback (`AfterCommit.onRollback`), và có đối soát cho lệnh bị mất.
+- Consumer outbox phải idempotent (dựa `processed_events` hoặc business key). Event đi outbox → Kafka `rhl.{producer}.events` (key = aggregateId) → `inbox_events` của service nhận; handler là bean `EventHandler`.
+- Gọi sang service khác (Feign) **không** nằm trong transaction của mình → chỉ dùng Feign để **đọc** (vd trip hỏi driver-service tài xế có đủ điều kiện Online), hoặc thao tác có bù trừ rõ ràng (tiêu báo giá idempotent theo `tripId`, lỗi thì `release`). Việc gì cần đổi trạng thái ở hai nơi cùng lúc thì hoặc thuộc cùng service (gán tài xế + chuyến + `driver_states` trong trip-service), hoặc đi event nhất quán sau cùng (chuyến → thanh toán). Đừng tách thêm service nếu việc đó buộc phải có giao dịch phân tán.
 - Endpoint `/internal/**` chỉ cho vai trò `SERVICE`, không có route ở gateway; endpoint cho người dùng luôn ở `/api/v1/**`.
 
 ## Được dùng thoải mái

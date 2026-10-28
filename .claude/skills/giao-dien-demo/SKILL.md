@@ -11,10 +11,13 @@ Mục đích: **chứng minh luồng nghiệp vụ chạy thật trên trình du
 
 ```
 api-gateway/src/main/resources/static/   (gateway phuc vu, goi API cung origin :8080)
-├── index.html          chon vai tro, dang nhap nhanh tai khoan mau
+├── index.html          dang nhap (dien nhanh email tai khoan mau), dang ky khach/tai xe, quen mat khau (UI-CUS-001)
+├── account.html        ho so cua toi: xem, sua ho ten (moi vai tro)
 ├── customer.html       bao gia -> dat chuyen -> theo doi tai xe tren ban do -> bien nhan
-├── driver.html         Online/Offline, gui GPS (gia lap keo marker), nhan offer co dong ho, chuyen trang thai, vi
-├── ops.html            tra cuu chuyen (support), duyet ho so (reviewer), hoan tien (finance)
+├── driver.html         Online/Offline (chua du dieu kien -> link hoan thien ho so), GPS, offer co dong ho, chuyen trang thai, vi
+├── driver-profile.html thong tin + GPLX, phuong tien, tai 3 giay to, gui duyet, lich su quyet dinh (UI-DRV-001)
+├── ops.html            tab theo vai tro: Chuyen (loc du UI-ADM-003), Duyet tai xe (+ dinh chi), Thanh toan,
+│                       Nguoi dung (vai tro, khoa/mo), Bang gia & hoa hong (UI-ADM-004), Event loi, Audit
 ├── css/app.css
 └── js/api.js           fetch + JWT + refresh + Idempotency-Key, ket noi STOMP, dinh dang so
 tools/seed-dev.mjs           Node 22: bang gia, hoa hong, khach, 101 tai xe da duyet - qua API gateway
@@ -27,6 +30,9 @@ tools/simulate-drivers.mjs   Node 22: N tai xe, moi 3 s gui vi tri, tu dong nhan
 - `@stomp/stompjs` `7.0.0` (jsdelivr, bản UMD) — WebSocket gốc, không SockJS.
 
 ## Quy tắc
+
+- **Mọi màn SRS §3.1 ghi PHẢI đều phải có giao diện** (đơn giản cũng được). Muốn cắt → ghi rõ vào `docs/TIEN-DO.md` và hỏi người dùng, không lặng lẽ bỏ.
+- Thao tác nhạy cảm (khóa tài khoản, đổi vai trò, đình chỉ, tắt bảng giá, hoàn tiền, hủy ngoại lệ): `confirm`/hỏi lý do trước khi gửi (UI-ADM-005).
 
 - **Không `innerHTML` với dữ liệu từ server** — dùng `textContent` / tạo phần tử (hook cảnh báo). Tên khách, địa chỉ, mô tả kiện hàng là dữ liệu người dùng nhập.
 - Token lưu `sessionStorage` (demo); hết hạn → gọi `/auth/refresh` một lần rồi thử lại.

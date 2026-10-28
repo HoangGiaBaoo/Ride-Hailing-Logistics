@@ -9,9 +9,9 @@ import org.springframework.test.context.ActiveProfiles;
 @Tag("integration")
 @SpringBootTest
 @ActiveProfiles("test")
-class IdentityServiceApplicationTests {
+public class IdentityServiceApplicationTests {
 
     @Test
-    void contextLoads() {
+    public void contextLoads() {
     }
 }

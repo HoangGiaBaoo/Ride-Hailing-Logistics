@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hồ sơ của tôi</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<header class="app"><h1>Hồ sơ của tôi</h1><span class="who"><a id="home" href="/index.html">← Quay lại</a><button id="logout">Đăng xuất</button></span></header>
+<main class="single">
+  <section class="panel narrow">
+    <dl class="kv" id="info"></dl>
+    <form id="form">
+      <label for="fullName">Họ tên</label>
+      <input id="fullName" required maxlength="100" autocomplete="name">
+      <div class="row"><button class="primary" type="submit">Lưu</button></div>
+    </form>
+    <p class="muted">Email và số điện thoại là định danh đăng nhập nên không tự sửa tại đây; liên hệ hỗ trợ nếu cần đổi.</p>
+    <p id="driverLink" hidden><a href="/driver-profile.html">Hồ sơ tài xế, phương tiện và giấy tờ →</a></p>
+  </section>
+</main>
+<script src="/js/api.js"></script>
+<script>
+(function () {
+  const { el, show, fmt, call, toast, guarded, session } = RHL;
+  const $ = (id) => document.getElementById(id);
+  const s = session();
+  if (!s) { location.href = '/index.html'; return; }
+  const home = { CUSTOMER: '/customer.html', DRIVER: '/driver.html' };
+  $('home').href = home[s.user.roles.find((r) => home[r])] || '/ops.html';
+  $('logout').onclick = RHL.logout;
+  $('driverLink').hidden = !s.user.roles.includes('DRIVER');
+
+  const statusText = { ACTIVE: 'Hoạt động', DISABLED: 'Đã khóa' };
+  function render(u) {
+    show($('info'), el('dt', {}, 'Email'), el('dd', {}, u.email), el('dt', {}, 'Số điện thoại'), el('dd', {}, u.phone),
+      el('dt', {}, 'Vai trò'), el('dd', {}, u.roles.join(', ')), el('dt', {}, 'Trạng thái'), el('dd', {}, statusText[u.status] || u.status),
+      el('dt', {}, 'Tạo lúc'), el('dd', {}, fmt.datetime(u.createdAt)));
+    $('fullName').value = u.fullName;
+  }
+
+  // Chi gui truong duoc phep sua (DR-VAL-005); server cung chi doc fullName
+  $('form').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    guarded(ev.submitter, async () => {
+      const u = await call('PATCH', '/users/me', { fullName: $('fullName').value });
+      RHL.updateSessionUser(u); render(u); toast('Đã lưu hồ sơ', 'ok');
+    }).catch(() => {});
+  });
+
+  call('GET', '/users/me').then(render).catch((e) => toast(RHL.errorText(e), 'error'));
+})();
+</script>
+</body>
+</html>
